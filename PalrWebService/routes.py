@@ -9,6 +9,11 @@ app.config['MONGO_DBNAME'] = 'local'
 mongo = PyMongo(app, config_prefix='MONGO')
 #mongo =  PyMongo(app)
 
+@app.route("/")
+def testServer():
+    return "Hello World!"
+
+
 @app.route("/users")
 def list_users():
     users = mongo.db.users.find()
