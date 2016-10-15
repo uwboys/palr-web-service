@@ -17,9 +17,11 @@ def hello():
 @app.route("/users")
 def list_users():
     users = mongo.db.users.find()
+    i = 0
     for document in users:
+        i+=1
+        print i
         print(document)
-    print users
     return "Hello World!"
 
 if __name__ == "__main__":
