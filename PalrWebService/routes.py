@@ -1,13 +1,17 @@
+import pymongo
 from flask import Flask, jsonify, request
-from flask_pymongo import PyMongo
+from pymongo import MongoClient
 from PalrWebService import app
+MONGODB_URI = 'mongodb://admin:admin@ds044989.mlab.com:44989/palrdb'
 
 # connect to local database
-app.config['MONGO_HOST'] = 'localhost'
-app.config['MONGO_PORT'] = 27017
-app.config['MONGO_DBNAME'] = 'local'
-mongo = PyMongo(app, config_prefix='MONGO')
+#app.config['MONGO_HOST'] = 'ds044989.mlab.com'
+#app.config['MONGO_PORT'] = 44989
+#app.config['MONGO_DBNAME'] = 'palrdb'
+#mongo = PyMongo(app, config_prefix='MONGO')
 #mongo =  PyMongo(app)
+mongo = pymongo.MongoClient(MONGODB_URI)
+db = mongo.get_default_database()
 
 @app.route("/")
 def testServer():
@@ -16,12 +20,13 @@ def testServer():
 
 @app.route("/users")
 def list_users():
-    users = mongo.db.users.find()
+    users = db['users']
+    cursor = users.find()
     i = 0
-    for document in users:
+    for document in cursor:
         i+=1
         print i
-        print(document)
+        print('Username = %s Password = %s' % (document['username'], document['password']))
     return "Hello World!"
 
 @app.route('/login', methods=['POST'])
