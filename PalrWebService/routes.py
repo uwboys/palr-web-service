@@ -208,13 +208,12 @@ def conversations():
             'conversationDataId': conversation_data_id,
         }
             
-
         conversations_list.append(data)
 
     return make_response(dumps(conversations_list))
 
 @app.route("/messages/<conversation_id>", methods=['GET'])
-def conversation(conversation_id):
+def conversation_messages(conversation_id):
     # Get that conversation_data, iterate thru all of its messages
     conversation_data_id = mongo.db.conversations.find_one({'conversation_data': ObjectId(conversation_data_id)})
     messages_cursor = mongo.db.messages.find({'conversation_data': ObjectId(conversation_data_id)})
@@ -225,6 +224,11 @@ def conversation(conversation_id):
         conversation_messages.append(message)
 
     return make_response(dumps(conversation_messages))
+
+@app.route("/message", methods=['POST'])
+def send_message():
+    payload = parse_token(request)
+    user_id = payload['sub']
 
 
 if __name__ == "__main__":
