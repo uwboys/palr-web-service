@@ -12,12 +12,20 @@ import pymongo
 from pymongo import MongoClient
 
 app = Flask(__name__)
+
+app.config['MONGO_HOST'] = 'ds044989.mlab.com'
+app.config['MONGO_PORT'] = 44989
+app.config['MONGO_DBNAME'] = 'palrdb'
+app.config['MONGO_USERNAME'] = 'admin'
+app.config['MONGO_PASSWORD'] = 'admin'
+
 MONGODB_URI = 'mongodb://admin:admin@ds044989.mlab.com:44989/palrdb'
+
 CORS(app)
 
 app.config['SECRET_KEY'] = 'super-secret-key'
 
-mongo = pymongo.MongoClient(MONGODB_URI)
+mongo = PyMongo(app, config_prefix='MONGO')
 
 @app.route("/", methods=['GET'])
 def testServer():
