@@ -121,7 +121,7 @@ def register():
         abort(400, {'message': 'Missing required parameters' \
                 ' name, password, email, and location are ALL required.'})
 
-        # Should do error checking to see if user exists already
+    # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
         # Email already exists
         error_message = "A user with the email " + email + " already not exists."
@@ -159,7 +159,7 @@ def match():
 
     user_in_match_process = user_document.get('in_match_process')
     if user_in_match_process is True:
-        return dumps({'success':True}), 200, {'ContentType':'application/json'} 
+        return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
     # Check our users collection to see if there
     # is someone to match with us
@@ -190,7 +190,7 @@ def user(user_id):
                     "location": user_document.get('location'),
                     "gender": user_document.get('gender'),
                     "age": user_document.get('age'),
-                    "inMatchProcess": user_document.get('in_match_process'),
+                    "inMatchProcess": user_document.get('in_match_process')
                     })
 
     return resp
@@ -218,23 +218,48 @@ def conversations():
             'createdAt': record.get("created_at"),
             'conversationDataId': conversation_data_id,
         }
-            
+
         conversations_list.append(data)
 
     return make_response(dumps(conversations_list))
 
-@app.route("/messages/<conversation_id>", methods=['GET'])
-def conversation_messages(conversation_id):
-    # Get that conversation_data, iterate thru all of its messages
-    conversation_data_id = mongo.db.conversations.find_one({'conversation_data': ObjectId(conversation_data_id)})
-    messages_cursor = mongo.db.messages.find({'conversation_data': ObjectId(conversation_data_id)})
-    
-    conversation_messages = []
+@app.route("/messages", methods=['GET'])
+def get_messages():
+    payload = parse_token(request)
+    conversationDataId = request.args.get('conversationDataId')
+    limit = request.args.get('limit')
+    offset = request.args.get('offset')
 
-    for messages in messages_cursor:
-        conversation_messages.append(message)
+    if conversationDataId is None:
+        # invalid query parameters
+        error_message = "The parameter conversationDataId was missing."
+        abort(400, {'message': error_message})
 
-    return make_response(dumps(conversation_messages))
+    # default limit is 20
+    if limit is None:
+        limit = 20
+
+    #default offset is 0
+    if offset is None:
+        offset = 0
+    messages = []
+
+    #get messages associated with the conversationDataId
+    cursor = mongo.db.messages.find({"conversation_data_id": conversationDataId}).sort('created_at', pymongo.DESCENDING)
+
+    if len(cursor) > offset or limit != 0:
+        i = 0
+        j = 0
+        for record in cursor:
+            if i < cursor:
+                i+=1
+                continue
+            if j < limit:
+                j+=1
+                messages.append(cursor)
+
+        print messages
+        return make_response(dumps(messages))
 
 @app.route("/message", methods=['POST'])
 def send_message():
