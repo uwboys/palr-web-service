@@ -1,12 +1,14 @@
 from flask import Flask, jsonify, request, Response, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_pymongo import PyMongo
+from flask_cors import CORS, cross_origin
 from models.user import User
 from datetime import datetime, timedelta
 import jwt
 
 
 app = Flask(__name__)
+CORS(app)
 
 app.config['SECRET_KEY'] = 'super-secret-key'
 
@@ -37,7 +39,7 @@ def parse_token(req):
 def respond400(error):
     return jsonify({'message': error.description['message']})
 
-@app.route("/users", methods=['GET'])
+@app.route("/users/", methods=['GET'])
 def list_users():
     users = mongo.db.users.find()
     for document in users:
@@ -46,6 +48,7 @@ def list_users():
     return "Hello World!"
 
 @app.route('/login', methods=['POST'])
+@cross_origin('*')
 def login():
     email = request.get_json().get('email')
     password = request.get_json().get('password')
@@ -73,6 +76,7 @@ def login():
     return resp
 
 @app.route('/register', methods = ['POST'])
+@cross_origin('*')
 def register():
     name = request.get_json().get('name')
     password = request.get_json().get('password')
