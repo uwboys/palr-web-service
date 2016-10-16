@@ -67,7 +67,9 @@ def create_match(user_id_1, user_id_2):
 
     # Set the above users matched to true
     mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"is_matched": True}})
+    mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"in_match_process": False}})
     mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"is_matched": True}})
+    mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"in_match_process": False}})
 
 
 # Error Handling
@@ -235,6 +237,8 @@ def conversation_messages(conversation_id):
 def send_message():
     payload = parse_token(request)
     user_id = payload['sub']
+
+    # Create the message
 
 
 if __name__ == "__main__":
