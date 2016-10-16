@@ -7,6 +7,7 @@ from flask_cors import CORS, cross_origin
 from models.user import User
 from datetime import datetime, timedelta
 from bson import ObjectId
+from time import time
 import jwt
 import pymongo
 from pymongo import MongoClient
@@ -63,7 +64,9 @@ def create_match(user_id_1, user_id_2):
     # Create the conversation data
     conversation_data_id = mongo.db.conversation_data.insert({"isPermanent": False, "lastMessageSent": None})
 
-    conversation_id = mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data": conversation_data_id, "created_at": strftime("%Y-%m-%d %H:%M:%S")})
+    ts = time()
+    isodate = datetime.fromtimestamp(ts, None)
+    conversation_id = mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data": conversation_data_id, "created_at": isodate})
 
     # Set the above users matched to true
     mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"is_matched": True}})
