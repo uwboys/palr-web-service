@@ -10,8 +10,7 @@ from bson import ObjectId
 import jwt
 import pymongo
 from pymongo import MongoClient
-
-app = Flask(__name__)
+from PalrWebService import app
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
 app.config['MONGO_PORT'] = 44989
@@ -139,7 +138,7 @@ def match():
     payload = parse_token(request)
     user_id = payload['sub']
 
-    # Check if this user is already 
+    # Check if this user is already
     # in the pool to be matched
     user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
 
@@ -153,7 +152,7 @@ def match():
 
     user_in_match_process = user_document.get('in_match_process')
     if user_in_match_process is not None and user_in_match_process is True:
-        return dumps({'success':True}), 200, {'ContentType':'application/json'} 
+        return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
     # Check our users collection to see if there
     # is someone to match with us
@@ -168,7 +167,7 @@ def match():
 
     mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": {"in_match_process": True}})
 
-    return dumps({'success':True}), 200, {'ContentType':'application/json'} 
+    return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
 @app.route("/users/<user_id>", methods=['GET'])
 def user(user_id):
