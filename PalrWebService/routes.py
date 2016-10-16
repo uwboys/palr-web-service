@@ -98,7 +98,7 @@ def register():
         abort(400, {'message': 'Missing required parameters' \
                 ' name, password, email, and location are ALL required.'})
 
-        # Should do error checking to see if user exists already
+    # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
         # Email already exists
         error_message = "A user with the email " + email + " already not exists."
@@ -183,11 +183,45 @@ def user(user_id):
                     "location": user_document.get('location'),
                     "gender": user_document.get('gender'),
                     "age": user_document.get('age'),
-                    "inMatchProcess": user_document.get('in_match_process'),
-                    "sucksOnToes": "yes"
+                    "inMatchProcess": user_document.get('in_match_process')
                     })
 
     return resp
+@app.route("/messages", methods=['GET'])
+def messages():
+    payload = parse_token(request)
+    conversationDataId = request.args.get('conversationDataId')
+    limit = request.args.get('limit')
+    offset = request.args.get('offset')
+
+    if conversationDataId is None:
+        # invalid query parameters
+        error_message = "The parameter conversationDataId was missing."
+        abort(400, {'message': error_message})
+
+    if limit is None:
+        limit = 20
+
+    if offset is None:
+        offset = 0
+    messages = []
+
+    #get messages associated with the conversationDataId
+    cursor = mongo.db.messages.find({"conversation_data_id": conversationDataId}).sort('created_at', pymongo.DESCENDING)
+
+    if len(cursor) > offset or limit != 0:
+        i = 0
+        j = 0
+        for record in cursor:
+            if i < cursor:
+                i++
+                continue
+            if j < limit:
+                j++
+                messages.append(cursor)
+
+        print messages
+        return make_response(dumps(messages))
 
 if __name__ == "__main__":
     app.run()
