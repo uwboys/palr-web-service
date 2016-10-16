@@ -249,10 +249,10 @@ def get_messages():
         j = 0
         for record in cursor:
             if i < cursor:
-                i++
+                i+=1
                 continue
             if j < limit:
-                j++
+                j+=1
                 messages.append(cursor)
 
         print messages
