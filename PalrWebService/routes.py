@@ -5,10 +5,7 @@ from models.user import User
 from datetime import datetime, timedelta
 import jwt
 import pymongo
-from flask import Flask, jsonify, request
 from pymongo import MongoClient
-from PalrWebService import app
-
 
 app = Flask(__name__)
 MONGODB_URI = 'mongodb://admin:admin@ds044989.mlab.com:44989/palrdb'
@@ -17,7 +14,7 @@ app.config['SECRET_KEY'] = 'super-secret-key'
 
 mongo = pymongo.MongoClient(MONGODB_URI)
 
-@app.route("/")
+@app.route("/", methods=['GET'])
 def testServer():
     return "Hello World!"
 
@@ -44,8 +41,7 @@ def respond400(error):
 
 @app.route("/users", methods=['GET'])
 def list_users():
-    users = db['users']
-    cursor = users.find()
+    cursor = mongo.db.users.find()
     i = 0
     for document in cursor:
         i+=1
@@ -75,7 +71,7 @@ def login():
     token = create_token(userid)
     print(token)
     resp = jsonify({"access_token": token,
-                    "userid": userid})
+        "userid": userid})
 
     resp.headers['Access-Control-Allow-Origin'] = '*'
     return resp
@@ -92,9 +88,9 @@ def register():
     if name is None or password is None or email is None:
         # missing arguments
         abort(400, {'message': 'Missing required parameters' \
-            ' name, password, email, and location are ALL required.'})
+                ' name, password, email, and location are ALL required.'})
 
-    # Should do error checking to see if user exists already
+        # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
         # Email already exists
         abort(400, {'message': 'A user with the email #{email} already exists'})
@@ -111,7 +107,7 @@ def register():
     token = create_token(user.id)
     print(token)
     resp = jsonify({"access_token": token,
-                    "userid": str(_id)})
+        "userid": str(_id)})
 
     resp.headers['Access-Control-Allow-Origin'] = '*'
     return resp
