@@ -4,17 +4,22 @@ from flask_pymongo import PyMongo
 from models.user import User
 from datetime import datetime, timedelta
 import jwt
+import pymongo
+from flask import Flask, jsonify, request
+from pymongo import MongoClient
+from PalrWebService import app
 
 
 app = Flask(__name__)
+MONGODB_URI = 'mongodb://admin:admin@ds044989.mlab.com:44989/palrdb'
 
 app.config['SECRET_KEY'] = 'super-secret-key'
 
-# connect to local database
-app.config['MONGO_HOST'] = 'localhost'
-app.config['MONGO_PORT'] = 27017
-app.config['MONGO_DBNAME'] = 'Palr'
-mongo = PyMongo(app, config_prefix='MONGO')
+mongo = pymongo.MongoClient(MONGODB_URI)
+
+@app.route("/")
+def testServer():
+    return "Hello World!"
 
 def create_token(user_id):
     payload = {
@@ -39,10 +44,13 @@ def respond400(error):
 
 @app.route("/users", methods=['GET'])
 def list_users():
-    users = mongo.db.users.find()
-    for document in users:
-        print(document)
-    print users
+    users = db['users']
+    cursor = users.find()
+    i = 0
+    for document in cursor:
+        i+=1
+        print i
+        print('Username = %s Password = %s' % (document['username'], document['password']))
     return "Hello World!"
 
 @app.route('/login', methods=['POST'])
