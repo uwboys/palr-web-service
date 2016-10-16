@@ -8,8 +8,14 @@ from models.user import User
 from datetime import datetime, timedelta
 from bson import ObjectId
 import jwt
+import pymongo
+from pymongo import MongoClient
+from PalrWebService import app
 
 app = Flask(__name__)
+import pymongo
+from pymongo import MongoClient
+from PalrWebService import app
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
 app.config['MONGO_PORT'] = 44989
@@ -134,7 +140,7 @@ def match():
     payload = parse_token(request)
     user_id = payload['sub']
 
-    # Check if this user is already 
+    # Check if this user is already
     # in the pool to be matched
     user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
 
@@ -163,7 +169,7 @@ def match():
 
     mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": {"in_match_process": True}})
 
-    return dumps({'success':True}), 200, {'ContentType':'application/json'} 
+    return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
 @app.route("/users/<user_id>", methods=['GET'])
 def user(user_id):
