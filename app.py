@@ -1,16 +1,43 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response, abort
+from werkzeug.security import generate_password_hash, check_password_hash
 from flask_pymongo import PyMongo
+from models.user import User
+from datetime import datetime, timedelta
+import jwt
+
 
 app = Flask(__name__)
+
+app.config['SECRET_KEY'] = 'super-secret-key'
 
 # connect to local database
 app.config['MONGO_HOST'] = 'localhost'
 app.config['MONGO_PORT'] = 27017
-app.config['MONGO_DBNAME'] = 'local'
+app.config['MONGO_DBNAME'] = 'Palr'
 mongo = PyMongo(app, config_prefix='MONGO')
-#mongo =  PyMongo(app)
 
-@app.route("/users")
+def create_token(user_id):
+    payload = {
+            # subject
+            'sub': user_id,
+            #issued at
+            'iat': datetime.utcnow(),
+            #expiry
+            'exp': datetime.utcnow() + timedelta(days=1)
+            }
+
+    token = jwt.encode(payload, app.secret_key, algorithm='HS256')
+    return token.decode('unicode_escape')
+
+def parse_token(req):
+    token = req.headers.get('Authorization').split()[1]
+    return jwt.decode(token, app.secret_key, algorithms='HS256')
+
+@app.errorhandler(400)
+def respond400(error):
+    return jsonify({'message': error.description['message']})
+
+@app.route("/users", methods=['GET'])
 def list_users():
     users = mongo.db.users.find()
     for document in users:
@@ -20,25 +47,66 @@ def list_users():
 
 @app.route('/login', methods=['POST'])
 def login():
-    json = request.get_json()
-    print json
-    return "hello"
-
-@app.route('/register', methods = ['POST'])
-def new_user():
-    username = request.get_json().get('username')
+    email = request.get_json().get('email')
     password = request.get_json().get('password')
 
-    if username is None or password is None:
-        abort(400) # missing arguments
-    if User.query.filter_by(username = username).first() is not None:
-        abort(400) # existing user
+    cursor = mongo.db.users.find({"email": email})
 
-    user = User(username = username)
-    user.hash_password(password)
-    db.session.add(user)
-    db.session.commit()
-    return jsonify({ 'username': user.username }), 201, {'Location': url_for('get_user', id = user.id, _external = True)}
+    if cursor.count() == 0:
+        error_message = "A user with the email " + email + " does not exist."
+        abort(400, {'message': error_message})
+
+
+    user_document = cursor.next()
+
+    if not check_password_hash(user_document['password'], password):
+        error_message = "Invalid password for " + email + "."
+        abort(400, {'message': error_message})
+
+    userid = str(user_document['_id'])
+    token = create_token(userid)
+    print(token)
+    resp = jsonify({"access_token": token,
+                    "userid": userid})
+
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    return resp
+
+@app.route('/register', methods = ['POST'])
+def register():
+    name = request.get_json().get('name')
+    password = request.get_json().get('password')
+    email = request.get_json().get('email')
+    location = request.get_json().get('location')
+
+    print request.get_json()
+
+    if name is None or password is None or email is None:
+        # missing arguments
+        abort(400, {'message': 'Missing required parameters' \
+            ' name, password, email, and location are ALL required.'})
+
+    # Should do error checking to see if user exists already
+    if mongo.db.users.find({"email": email}).count() > 0:
+        # Email already exists
+        abort(400, {'message': 'A user with the email #{email} already exists'})
+
+
+
+    _id = mongo.db.users.insert({"name": name, "password": generate_password_hash(password), "email" : email, "location": location})
+    print str(_id)
+
+    user = User(str(_id), name, password, email, location)
+
+    # Now we have the Id, we need to create a jwt access token
+    # and send the corresponding response back
+    token = create_token(user.id)
+    print(token)
+    resp = jsonify({"access_token": token,
+                    "userid": str(_id)})
+
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    return resp
 
 if __name__ == "__main__":
     app.run()
