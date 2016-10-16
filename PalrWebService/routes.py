@@ -220,7 +220,8 @@ def conversations():
 
     return make_response(dumps(conversations_list))
 
-@app.route("/messages", methods=['GET'])
+@app.route("/messages", methods=['GET', 'POST'])
+
 def get_messages():
     payload = parse_token(request)
     conversationDataId = request.args.get('conversationDataId')
