@@ -51,7 +51,11 @@ def user_to_map(user):
         'id': str(user.get("_id")),
         'name': user.get("name"),
         'email': user.get("email"),
-        'location': user.get("location")
+        'location': user.get("location"),
+        "gender": user.get('gender'),
+        "age": user.get('age'),
+        "inMatchProcess": user.get('in_match_process'),
+        "isMatched": user.get('is_matched')
     }
 
 
@@ -73,7 +77,6 @@ def create_match(user_id_1, user_id_2):
     mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"in_match_process": False}})
     mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"is_matched": True}})
     mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"in_match_process": False}})
-
 
 # Error Handling
 @app.errorhandler(400)
@@ -190,7 +193,8 @@ def user(user_id):
                     "location": user_document.get('location'),
                     "gender": user_document.get('gender'),
                     "age": user_document.get('age'),
-                    "inMatchProcess": user_document.get('in_match_process')
+                    "inMatchProcess": user_document.get('in_match_process'),
+                    "isMatched": user_document.get('is_matched')
                     })
 
     return resp
