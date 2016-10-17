@@ -13,11 +13,6 @@ import pymongo
 from pymongo import MongoClient
 from PalrWebService import app
 
-app = Flask(__name__)
-import pymongo
-from pymongo import MongoClient
-from PalrWebService import app
-
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
 app.config['MONGO_PORT'] = 44989
 app.config['MONGO_DBNAME'] = 'palrdb'
@@ -84,6 +79,10 @@ def respond400(error):
     response = jsonify({'message': error.description['message']})
     response.status_code = 400
     return response
+
+@app.route("/", methods=['GET'])
+def testServer():
+     return "Hello World!"
 
 @app.route('/login', methods=['POST'])
 @cross_origin()
@@ -290,7 +289,7 @@ def send_message(request):
 
     content = req_body.get('content')
     conversation_data_id = req_body.get('conversationDataId')
-    created_by = req_body.get('createdById')
+    created_by = payload['sub']
 
     # validate
     if content is None or conversation_data_id is None or created_by is None:
