@@ -232,7 +232,6 @@ def conversations():
     return make_response(dumps(conversations_list))
 
 def get_messages(request):
-    print "Get message executing"
     payload = parse_token(request)
     conversation_data_id = request.args.get('conversationDataId')
     limit = request.args.get('limit')
@@ -275,11 +274,9 @@ def get_messages(request):
                 messages.append(data)
             else:
                 break
-        print messages
         return make_response(dumps(messages))
 
 def send_message(request):
-    print "Send Message executing"
     payload = parse_token(request)
 
     # Get the request body
@@ -299,13 +296,16 @@ def send_message(request):
     ts = time()
     isodate = datetime.fromtimestamp(ts, None)
 
+
     # update conversations last update data
     conversation_cursor = mongo.db.conversations.find({"conversation_data_id": conversation_data_id})
     for record in conversation_cursor:
         mongo.db.conversations.update({"_id": record.get('_id')}, {"$set": {"last_message_date": isodate}})
 
     # create the message
-    message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": isodate, "created_by": ObjectId(created_by), "content": content})
+
+    print datetime.now()
+    message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.now(), "created_by": ObjectId(created_by), "content": content})
     user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(created_by)}))
     # get the created message
     record = mongo.db.messages.find_one({"_id": message_id})
@@ -316,7 +316,7 @@ def send_message(request):
         'createdAt': str(record.get('created_at')),
         'content': record.get('content')
     }
-    print message
+
     return make_response(dumps(message))
 
 @app.route("/messages", methods=['GET', 'POST'])
