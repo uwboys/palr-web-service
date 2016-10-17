@@ -172,7 +172,7 @@ def match():
         if in_match_process is True:
             # Match with this person
             matched_user_id = record.get('_id')
-            create_match(user_id, matched_user_id)
+            create_match(ObjectId(user_id), matched_user_id)
             break
 
     mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": {"in_match_process": True}})
@@ -308,14 +308,14 @@ def send_message(request):
         mongo.db.conversations.update({"_id": record.get('_id')}, {"$set": {"last_message_date": isodate}})
 
     # create the message
-    message_id = mongo.db.messages.insert({"conversation_data_id": conversation_data_id, "created_at": isodate, "created_by": created_by, "content": content})
-
+    message_id = mongo.db.messages.insert({"conversation_data_id": objectId(conversation_data_id), "created_at": isodate, "created_by": objectId(created_by), "content": content})
+    user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(created_by)}))
     # get the created message
     record = mongo.db.messages.find({"_id": message_id})
     message = {
         'id': str(record.get('_id')),
-        'conversationDataId': conversation_data_id,
-        'createdBy': record.get('created_by'),
+        'conversationDataId': str(conversation_data_id),
+        'createdBy': user_document,
         'createdAt': str(record.get('created_at')),
         'content': record.get('content')
     }
