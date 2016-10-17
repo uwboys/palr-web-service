@@ -284,9 +284,9 @@ def send_message(request):
     created_by = payload['sub']
 
     # validate
-    if content is None or conversation_data_id is None or created_by is None:
+    if content is None or conversation_data_id is None:
         # invalid query parameters
-        error_message = "Error in the request body. All of content, conversationDataId and createdById are needed."
+        error_message = "Error in the request body. Content and conversationDataId are needed."
         abort(400, {'message': error_message})
 
     # get the current time
