@@ -74,6 +74,8 @@ def create_match(user_id_1, user_id_2):
     mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"is_matched": True}})
     mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"in_match_process": False}})
 
+    return
+
 # Error Handling
 @app.errorhandler(400)
 def respond400(error):
@@ -173,7 +175,7 @@ def match():
             # Match with this person
             matched_user_id = record.get('_id')
             create_match(ObjectId(user_id), matched_user_id)
-            break
+            return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
     mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": {"in_match_process": True}})
 
@@ -188,6 +190,7 @@ def user(user_id):
         abort(400, {'message': error_message})
 
     resp = jsonify({
+                    "id": str(user_document.get('_id')),
                     "name": user_document.get('name'),
                     "email": user_document.get('email'),
                     "location": user_document.get('location'),
