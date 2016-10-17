@@ -66,7 +66,7 @@ def create_match(user_id_1, user_id_2):
 
     ts = time()
     isodate = datetime.fromtimestamp(ts, None)
-    conversation_id = mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data": conversation_data_id, "created_at": isodate})
+    conversation_id = mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
 
     # Set the above users matched to true
     mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"is_matched": True}})
@@ -210,28 +210,35 @@ def conversations():
         user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(record.get('user'))}))
         pal_document = user_to_map(mongo.db.users.find_one({'_id': record.get('pal')}))
         conversation_id = str(record.get('_id'))
-        conversation_data_id = str(record.get('conversation_data'))
+        conversation_data_id = str(record.get('conversation_data_id'))
+        last_message_date = str(record.get('last_message_date'))
         data = {
             'id': conversation_id,
             'user': user_document,
             'pal': pal_document,
             'createdAt': record.get("created_at"),
             'conversationDataId': conversation_data_id,
+            'lastMessageDate': last_message_date
         }
-
         conversations_list.append(data)
 
     return make_response(dumps(conversations_list))
 
 @app.route("/messages", methods=['GET', 'POST'])
+def messages():
+    if request.method =='POST':
+        send_message(request)
+    else:
+        get_messages(request)
 
-def get_messages():
+def get_messages(request):
+    print "Get message executing"
     payload = parse_token(request)
-    conversationDataId = request.args.get('conversationDataId')
+    conversation_data_id = request.args.get('conversationDataId')
     limit = request.args.get('limit')
     offset = request.args.get('offset')
 
-    if conversationDataId is None:
+    if conversation_data_id is None:
         # invalid query parameters
         error_message = "The parameter conversationDataId was missing."
         abort(400, {'message': error_message})
@@ -246,7 +253,7 @@ def get_messages():
     messages = []
 
     #get messages associated with the conversationDataId
-    cursor = mongo.db.messages.find({"conversation_data_id": conversationDataId}).sort('created_at', pymongo.DESCENDING)
+    cursor = mongo.db.messages.find({"conversation_data_id": conversation_data_id}).sort('created_at', pymongo.DESCENDING)
 
     if len(cursor) > offset or limit != 0:
         i = 0
@@ -257,18 +264,58 @@ def get_messages():
                 continue
             if j < limit:
                 j+=1
-                messages.append(cursor)
+                # Get relevant information for encoding
+                data = {
+                    'id': str(record.get('_id')),
+                    'conversationDataId': conversation_data_id,
+                    'createdBy': record.get('created_by'),
+                    'createdAt': str(record.get('created_at')),
+                    'content': record.get('content')
+                }
+                messages.append(data)
 
         print messages
         return make_response(dumps(messages))
 
-@app.route("/message", methods=['POST'])
-def send_message():
+def send_message(request):
+    print "Send Message executing"
     payload = parse_token(request)
-    user_id = payload['sub']
 
-    # Create the message
+    # Get the request body
+    req_body = request.get_json()
 
+    content = req_body.get('content')
+    conversation_data_id = req_body.get('conversationDataId')
+    created_by = req_body.get('createdById')
+
+    # validate
+    if content is None or conversation_data_id is None or created_by is None:
+        # invalid query parameters
+        error_message = "Error in the request body. All of content, conversationDataId and createdById are needed."
+        abort(400, {'message': error_message})
+
+    # get the current time
+    ts = time()
+    isodate = datetime.fromtimestamp(ts, None)
+
+    # update conversations last update data
+    conversation_cursor = mongo.db.conversations.find({"conversation_data_id": conversation_data_id})
+    for record in conversation_cursor:
+        mongo.db.conversations.update({"_id": record.get('_id')}, {"$set": {"last_message_date": isodate}})
+
+    # create the message
+    message_id = mongo.db.messages.insert({"conversation_data_id": conversation_data_id, "created_at": isodate, "created_by": created_by, "content": content})
+
+    # get the created message
+    record = mongo.db.messages.find({"_id": message_id})
+    message = {
+        'id': str(record.get('_id')),
+        'conversationDataId': conversation_data_id,
+        'createdBy': record.get('created_by'),
+        'createdAt': str(record.get('created_at')),
+        'content': record.get('content')
+    }
+    return make_response(dumps(message))
 
 if __name__ == "__main__":
     app.run()
