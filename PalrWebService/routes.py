@@ -65,7 +65,8 @@ def create_match(user_id_1, user_id_2):
 
     ts = time()
     isodate = datetime.fromtimestamp(ts, None)
-    conversation_id = mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
+    mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
+    mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
 
     # Set the above users matched to true
     mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"is_matched": True}})
@@ -259,10 +260,12 @@ def get_messages(request):
             if j < limit:
                 j+=1
                 # Get relevant information for encoding
+                user_document = user_to_map(mongo.db.users.find_one({'_id': record.get('created_by')}))
+
                 data = {
                     'id': str(record.get('_id')),
                     'conversationDataId': conversation_data_id,
-                    'createdBy': record.get('created_by'),
+                    'createdBy': user_document,
                     'createdAt': str(record.get('created_at')),
                     'content': record.get('content')
                 }
