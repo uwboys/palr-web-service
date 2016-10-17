@@ -206,7 +206,7 @@ def conversations():
     conversations_list = []
 
     # get all the conversations for current user
-    conversations = mongo.db.conversations.find({'user': user_id})
+    conversations = mongo.db.conversations.find({'user': ObjectId(user_id)})
 
     for record in conversations:
         # Get relevent information for encoding
@@ -227,20 +227,12 @@ def conversations():
 
     return make_response(dumps(conversations_list))
 
-@app.route("/messages", methods=['GET', 'POST'])
-def messages():
-    if request.method =='POST':
-        send_message(request)
-    else:
-        get_messages(request)
-
 def get_messages(request):
     print "Get message executing"
     payload = parse_token(request)
     conversation_data_id = request.args.get('conversationDataId')
     limit = request.args.get('limit')
     offset = request.args.get('offset')
-
     if conversation_data_id is None:
         # invalid query parameters
         error_message = "The parameter conversationDataId was missing."
@@ -254,15 +246,14 @@ def get_messages(request):
     if offset is None:
         offset = 0
     messages = []
-
     #get messages associated with the conversationDataId
-    cursor = mongo.db.messages.find({"conversation_data_id": conversation_data_id}).sort('created_at', pymongo.DESCENDING)
+    cursor = mongo.db.messages.find({"conversation_data_id": ObjectId(conversation_data_id)}).sort('created_at', pymongo.DESCENDING)
 
-    if len(cursor) > offset or limit != 0:
+    if cursor.count() > offset or limit != 0:
         i = 0
         j = 0
         for record in cursor:
-            if i < cursor:
+            if i < offset:
                 i+=1
                 continue
             if j < limit:
@@ -276,7 +267,8 @@ def get_messages(request):
                     'content': record.get('content')
                 }
                 messages.append(data)
-
+            else:
+                break
         print messages
         return make_response(dumps(messages))
 
@@ -307,10 +299,10 @@ def send_message(request):
         mongo.db.conversations.update({"_id": record.get('_id')}, {"$set": {"last_message_date": isodate}})
 
     # create the message
-    message_id = mongo.db.messages.insert({"conversation_data_id": objectId(conversation_data_id), "created_at": isodate, "created_by": objectId(created_by), "content": content})
+    message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": isodate, "created_by": ObjectId(created_by), "content": content})
     user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(created_by)}))
     # get the created message
-    record = mongo.db.messages.find({"_id": message_id})
+    record = mongo.db.messages.find_one({"_id": message_id})
     message = {
         'id': str(record.get('_id')),
         'conversationDataId': str(conversation_data_id),
@@ -318,7 +310,16 @@ def send_message(request):
         'createdAt': str(record.get('created_at')),
         'content': record.get('content')
     }
+    print message
     return make_response(dumps(message))
+
+@app.route("/messages", methods=['GET', 'POST'])
+def messages():
+    if request.method =='POST':
+        return send_message(request)
+    else:
+        return get_messages(request)
+
 
 if __name__ == "__main__":
     app.run()
