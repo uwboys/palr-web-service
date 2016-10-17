@@ -219,7 +219,7 @@ def conversations():
             'id': conversation_id,
             'user': user_document,
             'pal': pal_document,
-            'createdAt': record.get("created_at"),
+            'createdAt': str(record.get("created_at")),
             'conversationDataId': conversation_data_id,
             'lastMessageDate': last_message_date
         }
