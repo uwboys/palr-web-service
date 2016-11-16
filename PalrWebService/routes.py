@@ -129,7 +129,7 @@ def register():
     # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
         # Email already exists
-        error_message = "A user with the email " + email + " already not exists."
+        error_message = "A user with the email " + email + " already exists."
         abort(400, {'message': error_message})
 
 
