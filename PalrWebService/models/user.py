@@ -1,36 +1,20 @@
-from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
+from mongokit import Document, Connection
+from config import DatabaseConfig
+import setup
 
-class User(): 
-    def __init__(self, _id, name, password, email, location = None):
-        self._id = _id
-        self._name = name
-        self._password = password
-        self._email = email
-        self._location = location
+@setup.mongoConnection.register
+class User(Document): 
+    __database__ = DatabaseConfig.MONGO_DBNAME
+    __collection__ = 'messages'
 
-    @property
-    def id(self):
-        return self._id
-
-    @property
-    def name(self):
-        return self._name
-
-    @property
-    def password(self):
-        raise AttributeError('password is not a readable attribute')
-
-    @password.setter
-    def password(self, password):
-        self.password_hash = generate_password_hash(password)
-
-    def verify_password(self, password):
-        return check_password_hash(self.password_hash, password)
-
-    @property
-    def email(self):
-        return self._email
-
-    @property
-    def location(self):
-        return self._location
+    structure = {
+        '_id': basestring,
+        'name': basestring,
+        'is_temporary_matched': bool,
+        'is_permanently_matched': bool,
+        'email': basestring,
+        'location': basestring,
+        'password': basestring,
+        'in_match_process': bool
+    }

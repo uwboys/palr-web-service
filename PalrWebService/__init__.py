@@ -1,8 +1,4 @@
-"""
-The flask application package.
-"""
+import setup
 
-from flask import Flask
-app = Flask(__name__)
-
-import PalrWebService.routes
+if __name__ == "__main__":
+    setup.app.run()
