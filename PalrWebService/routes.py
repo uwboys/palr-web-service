@@ -11,7 +11,11 @@ from time import time
 import jwt
 import pymongo
 from pymongo import MongoClient
-from PalrWebService import app
+from flask_socketio import SocketIO, emit
+from flask import Flask
+
+app = Flask(__name__)
+app.debug = True
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
 app.config['MONGO_PORT'] = 44989
@@ -24,6 +28,8 @@ MONGODB_URI = 'mongodb://admin:admin@ds044989.mlab.com:44989/palrdb'
 CORS(app)
 
 app.config['SECRET_KEY'] = 'super-secret-key'
+
+socketio = SocketIO(app)
 
 mongo = PyMongo(app, config_prefix='MONGO')
 
@@ -43,23 +49,24 @@ def create_token(user_id):
 
 def user_to_map(user):
     return {
-        'id': str(user.get("_id")),
-        'name': user.get("name"),
-        'email': user.get("email"),
-        'location': user.get("location"),
-        "gender": user.get('gender'),
-        "age": user.get('age'),
-        "inMatchProcess": user.get('in_match_process'),
-        "isMatched": user.get('is_matched')
-    }
+            'id': str(user.get("_id")),
+            'name': user.get("name"),
+            'email': user.get("email"),
+            'location': user.get("location"),
+            "gender": user.get('gender'),
+            "age": user.get('age'),
+            "inMatchProcess": user.get('in_match_process'),
+            "isTemporarilyMatched": user.get('is_temporarily_matched'),
+            "isPermanentlyMatched": user.get('is_permanently_matched')
+        }
 
 
-# Functions for dealing with token generation and authorization
+    # Functions for dealing with token generation and authorization
 def parse_token(req):
     token = req.headers.get('Authorization')
     return jwt.decode(token, app.secret_key, algorithms='HS256')
 
-def create_match(user_id_1, user_id_2):
+def create_temporary_match(user_id_1, user_id_2):
     # Create the conversation data
     conversation_data_id = mongo.db.conversation_data.insert({"isPermanent": False, "lastMessageSent": None})
 
@@ -69,9 +76,9 @@ def create_match(user_id_1, user_id_2):
     mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
 
     # Set the above users matched to true
-    mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"is_matched": True}})
+    mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"is_temporarily_matched": True}})
     mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"in_match_process": False}})
-    mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"is_matched": True}})
+    mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"is_temporarily_matched": True}})
     mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"in_match_process": False}})
 
     return
@@ -82,10 +89,6 @@ def respond400(error):
     response = jsonify({'message': error.description['message']})
     response.status_code = 400
     return response
-
-@app.route("/", methods=['GET'])
-def testServer():
-     return "Hello World!"
 
 @app.route('/login', methods=['POST'])
 @cross_origin()
@@ -109,7 +112,7 @@ def login():
     user_id = str(user_document['_id'])
     token = create_token(user_id)
     resp = jsonify({"accessToken": token,
-                    "userId": user_id})
+        "userId": user_id})
 
     return resp
 
@@ -126,14 +129,22 @@ def register():
         abort(400, {'message': 'Missing required parameters' \
                 ' name, password, email, and location are ALL required.'})
 
-    # Should do error checking to see if user exists already
+        # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
         # Email already exists
         error_message = "A user with the email " + email + " already exists."
         abort(400, {'message': error_message})
 
 
-    _id = mongo.db.users.insert({"name": name, "password": generate_password_hash(password), "email" : email, "location": location, "in_match_process": False, "is_matched": False})
+    _id = mongo.db.users.insert({   
+                            "name": name, 
+                            "password": generate_password_hash(password), 
+                            "email" : email, 
+                            "location": location, 
+                            "in_match_process": False, 
+                            "is_temporarily_matched": False,
+                            "is_permanently_matched": False
+                        })
 
     user = User(str(_id), name, password, email, location)
 
@@ -141,12 +152,12 @@ def register():
     # and send the corresponding response back
     token = create_token(user.id)
     resp = jsonify({"accessToken": token,
-                    "userId": str(_id)})
+        "userId": str(_id)})
 
     return resp
 
 @app.route("/match", methods=['POST'])
-def match():
+def match_temporarily():
     payload = parse_token(request)
     user_id = payload['sub']
 
@@ -155,10 +166,10 @@ def match():
     user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
 
     # Check if the user is already matched
-    is_matched = user_document.get('is_matched')
+    is_temporarily_matched = user_document.get('is_temporarily_matched')
 
-    if is_matched is True:
-        error_message = "This user has already been matched."
+    if is_temporarily_matched is True:
+        error_message = "This user is already in a temporary match."
         abort(400, {'message': error_message})
 
 
@@ -174,7 +185,7 @@ def match():
         if in_match_process is True:
             # Match with this person
             matched_user_id = record.get('_id')
-            create_match(ObjectId(user_id), matched_user_id)
+            create_temporary_match(ObjectId(user_id), matched_user_id)
             return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
     mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": {"in_match_process": True}})
@@ -190,15 +201,16 @@ def user(user_id):
         abort(400, {'message': error_message})
 
     resp = jsonify({
-                    "id": str(user_document.get('_id')),
-                    "name": user_document.get('name'),
-                    "email": user_document.get('email'),
-                    "location": user_document.get('location'),
-                    "gender": user_document.get('gender'),
-                    "age": user_document.get('age'),
-                    "inMatchProcess": user_document.get('in_match_process'),
-                    "isMatched": user_document.get('is_matched')
-                    })
+        "id": str(user_document.get('_id')),
+        "name": user_document.get('name'),
+        "email": user_document.get('email'),
+        "location": user_document.get('location'),
+        "gender": user_document.get('gender'),
+        "age": user_document.get('age'),
+        "inMatchProcess": user_document.get('in_match_process'),
+        "isTemporarilyMatched": user_document.get('is_temporarily_matched'),
+        "isPermanentlyMatched": user_document.get('is_permanently_matched')
+        })
 
     return resp
 
@@ -220,13 +232,13 @@ def conversations():
         conversation_data_id = str(record.get('conversation_data_id'))
         last_message_date = str(record.get('last_message_date'))
         data = {
-            'id': conversation_id,
-            'user': user_document,
-            'pal': pal_document,
-            'createdAt': str(record.get("created_at")),
-            'conversationDataId': conversation_data_id,
-            'lastMessageDate': last_message_date
-        }
+                'id': conversation_id,
+                'user': user_document,
+                'pal': pal_document,
+                'createdAt': str(record.get("created_at")),
+                'conversationDataId': conversation_data_id,
+                'lastMessageDate': last_message_date
+                }
         conversations_list.append(data)
 
     return make_response(dumps(conversations_list))
@@ -265,12 +277,12 @@ def get_messages(request):
                 user_document = user_to_map(mongo.db.users.find_one({'_id': record.get('created_by')}))
 
                 data = {
-                    'id': str(record.get('_id')),
-                    'conversationDataId': conversation_data_id,
-                    'createdBy': user_document,
-                    'createdAt': str(record.get('created_at')),
-                    'content': record.get('content')
-                }
+                        'id': str(record.get('_id')),
+                        'conversationDataId': conversation_data_id,
+                        'createdBy': user_document,
+                        'createdAt': str(record.get('created_at')),
+                        'content': record.get('content')
+                        }
                 messages.append(data)
             else:
                 break
@@ -310,12 +322,12 @@ def send_message(request):
     # get the created message
     record = mongo.db.messages.find_one({"_id": message_id})
     message = {
-        'id': str(record.get('_id')),
-        'conversationDataId': str(conversation_data_id),
-        'createdBy': user_document,
-        'createdAt': str(record.get('created_at')),
-        'content': record.get('content')
-    }
+            'id': str(record.get('_id')),
+            'conversationDataId': str(conversation_data_id),
+            'createdBy': user_document,
+            'createdAt': str(record.get('created_at')),
+            'content': record.get('content')
+            }
 
     return make_response(dumps(message))
 
@@ -326,6 +338,25 @@ def messages():
     else:
         return get_messages(request)
 
+@socketio.on('my_event', namespace='/ws')
+def test_message(message):
+    print "one"
+    emit('my_response', {'data': message['data']})
+
+@socketio.on('my_broadcast_event', namespace='/ws')
+def test_message(message):
+    print "two"
+    emit('my_response', {'data': message['data']}, broadcast=True)
+
+@socketio.on('connect', namespace='/ws')
+def test_connect():
+    print "three"
+    emit('my_response', {'data': 'Connected'})
+
+@socketio.on('disconnect', namespace='/ws')
+def test_disconnect():
+    print('Client disconnected')
+
 
 if __name__ == "__main__":
-    app.run()
+    socketio.run(app)
