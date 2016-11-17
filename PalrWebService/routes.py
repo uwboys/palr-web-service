@@ -33,20 +33,7 @@ socketio = SocketIO(app)
 
 mongo = PyMongo(app, config_prefix='MONGO')
 
-# Utility Functions
-def create_token(user_id):
-    payload = {
-            # subject
-            'sub': user_id,
-            #issued at
-            'iat': datetime.utcnow(),
-            #expiry
-            'exp': datetime.utcnow() + timedelta(days=1)
-            }
-
-    token = jwt.encode(payload, app.secret_key, algorithm='HS256')
-    return token.decode('unicode_escape')
-
+# Utility Functions for Users
 def user_to_map(user):
     return {
             'id': str(user.get("_id")),
@@ -74,10 +61,102 @@ def user_response_by_id(user_id):
 def update_user_field (user_id, field, value):
     mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": { field: value}})
 
-    # Functions for dealing with token generation and authorization
-def parse_token(req):
-    token = req.headers.get('Authorization')
-    return jwt.decode(token, app.secret_key, algorithms='HS256')
+# Utility Functions for Matching
+# Internal function to determine match type
+def get_match_type (user_id):
+    user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+    return user_document.get("match_type")
+
+# Get match value for the talk type
+def get_match_value_for_talk(user_id_1, user_id_2):
+    user1 = user_response_by_id(user_id_1)
+    user2 = user_response_by_id(user_id_2)
+    points = 0
+    if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+        return -1
+    
+    if get_match_type(user_id_2) == "talk":
+        points += 5
+    elif get_match_type(user_id_2) == "listen":
+        points += 20
+    else:
+        points += 5
+
+    if user1.get('country') != user2.get('country'):
+        points += 5
+    else:
+        points -= 5
+
+    if user1.get('ethnicity') != user2.get('ethnicity'):
+        points += 5
+    else:
+        points -= 5
+
+    if user1.get('gender') != user2.get('gender'):
+        points += 5
+
+    return points
+
+# Get match value for the listen type
+def get_match_value_for_listen(user_id_1, user_id_2):
+    user1 = user_response_by_id(user_id_1)
+    user2 = user_response_by_id(user_id_2)
+    points = 0
+    if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+        return -1
+    
+    if get_match_type(user_id_2) == "talk":
+        points += 20
+    elif get_match_type(user_id_2) == "listen":
+        points += 2
+    else:
+        points += 5
+
+    if user1.get('country') != user2.get('country'):
+        points += 5
+    else:
+        points -= 5
+
+    if user1.get('ethnicity') != user2.get('ethnicity'):
+        points += 5
+    else:
+        points -= 5
+
+    if user1.get('gender') != user2.get('gender'):
+        points += 5
+
+    return points
+
+# Get match value for the learn type
+def get_match_value_for_learn(user_id_1, user_id_2):
+    user1 = user_response_by_id(user_id_1)
+    user2 = user_response_by_id(user_id_2)
+    points = 0
+    if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+        return -1
+    
+    if get_match_type(user_id_2) == "talk":
+        points += 20
+    elif get_match_type(user_id_2) == "listen":
+        points += 20
+    else:
+        points += 50
+
+    if user1.get('country') != user2.get('country'):
+        points += 5
+    else:
+        points -= 5
+
+    if user1.get('ethnicity') != user2.get('ethnicity'):
+        points += 5
+    else:
+        points -= 5
+
+    if user1.get('gender') != user2.get('gender'):
+        points += 5
+
+    return points
+
 
 def create_temporary_match(user_id_1, user_id_2):
     # Create the conversation data
@@ -95,6 +174,24 @@ def create_temporary_match(user_id_1, user_id_2):
     update_user_field(user_id_2, "in_match_process", False)
 
     return
+
+# Functions for dealing with token generation and authorization
+def create_token(user_id):
+    payload = {
+            # subject
+            'sub': user_id,
+            #issued at
+            'iat': datetime.utcnow(),
+            #expiry
+            'exp': datetime.utcnow() + timedelta(days=1)
+            }
+
+    token = jwt.encode(payload, app.secret_key, algorithm='HS256')
+    return token.decode('unicode_escape')
+
+def parse_token(req):
+    token = req.headers.get('Authorization')
+    return jwt.decode(token, app.secret_key, algorithms='HS256')
 
 # Error Handling
 @app.errorhandler(400)
@@ -132,10 +229,13 @@ def login():
 @app.route('/register', methods = ['POST'])
 @cross_origin()
 def register():
-    name = request.get_json().get('name')
-    password = request.get_json().get('password')
-    email = request.get_json().get('email')
-    location = request.get_json().get('location')
+    # Get the request body
+    req_body = request.get_json()
+
+    name = req_body.get('name')
+    password = req_body.get('password')
+    email = req_body.get('email')
+    location = req_body.get('location')
 
     if name is None or password is None or email is None:
         # missing arguments
@@ -173,6 +273,21 @@ def register():
 def match_temporarily():
     payload = parse_token(request)
     user_id = payload['sub']
+    match_vector = {}
+
+    # Get the request body
+    req_body = request.get_json()
+
+    # Get the match type
+    match_type = req_body.get('type')
+
+    if match_type is None:
+        match_type = "talk"
+    else:
+        match_type = match_type.lower()
+
+    # Update in database
+    update_user_field(user_id, "match_type", match_type)
 
     # Check if this user is already
     # in the pool to be matched
@@ -192,14 +307,31 @@ def match_temporarily():
 
     # Check our users collection to see if there
     # is someone to match with us
-    cursor = mongo.db.users.find({})
+    cursor = mongo.db.users.find({'in_match_process' : true})
     for record in cursor:
-        in_match_process = record.get('in_match_process')
-        if in_match_process is True:
-            # Match with this person
-            matched_user_id = record.get('_id')
-            create_temporary_match(ObjectId(user_id), matched_user_id)
-            return dumps({'success':True}), 200, {'ContentType':'application/json'}
+        # Add to the match vector based on match type
+        if match_type == "talk":
+            match_vector[record] = get_match_value_for_talk(user_id, record.get('_id'))
+        elif match_type == "listen":
+            match_vector[record] = get_match_value_for_listen(user_id, record.get('_id'))
+        else:  # learn
+            match_vector[record] = get_match_value_for_learn(user_id, record.get('_id'))
+        
+
+    match_vector_keys = match_vector.keys()
+    matched_user_id = None
+    max_match_value = -1
+
+    # Match with the most "different" person
+    for key in match_vector_keys:
+        if match_vector.get(key) > max_match_value:
+            max_match_value = match_vector.get(key)
+            matched_user_id = key.get('_id')
+
+    # Found a match
+    if not matched_user_id is None:
+        create_temporary_match(ObjectId(user_id), matched_user_id)
+        return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
     update_user_field(user_id, "in_match_process", True)
 
@@ -235,7 +367,7 @@ def register_user_details(request):
     location = req_body.get('location')
     age = req_body.get('age')
     ethnicity = req_body.get('ethnicity')
-    
+
     # Validate data
     if not gender is None:
         if type(gender) == unicode:
