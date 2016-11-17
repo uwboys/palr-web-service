@@ -235,10 +235,10 @@ def register_user_details(request):
     location = req_body.get('location')
     age = req_body.get('age')
     ethnicity = req_body.get('ethnicity')
-
+    
     # Validate data
     if not gender is None:
-        if type(gender) == str:
+        if type(gender) == unicode:
             gender = gender.lower()
             if gender != "male" and gender != "female":
                 error_message = "Gender can only be male or female"
@@ -248,19 +248,19 @@ def register_user_details(request):
             abort(400, {'message': error_message})
 
     if not location is None:
-        if type(location) == str:
+        if type(location) == unicode:
             location = location.lower()
         else:
             error_message = "Location should be a string."
             abort(400, {'message': error_message})
 
-    if not age is None:    
-        if age <= 0:
+    if not age is None:
+        if not type(age) is int or age <= 0:
             error_message = "Age can only be a positive nonzero integer"
             abort(400, {'message': error_message})
     
     if not ethnicity is None:
-        if type(ethnicity) == str:
+        if type(ethnicity) == unicode:
             ethnicity = ethnicity.lower()
         else:
             error_message = "Ethnicity should be a string."
