@@ -55,11 +55,24 @@ def user_to_map(user):
             'location': user.get("location"),
             "gender": user.get('gender'),
             "age": user.get('age'),
+            "ethnicity": user.get('ethnicity'),
             "inMatchProcess": user.get('in_match_process'),
             "isTemporarilyMatched": user.get('is_temporarily_matched'),
             "isPermanentlyMatched": user.get('is_permanently_matched')
         }
 
+def user_response_by_id(user_id):
+    user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+
+    if user_document is None:
+        error_message = "The user with id " + user_id + " does not exist."
+        abort(400, {'message': error_message})
+    
+    resp = jsonify(user_to_map(user_document))
+    return resp
+
+def update_user_field (user_id, field, value):
+    mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": { field: value}})
 
     # Functions for dealing with token generation and authorization
 def parse_token(req):
@@ -76,10 +89,10 @@ def create_temporary_match(user_id_1, user_id_2):
     mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
 
     # Set the above users matched to true
-    mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"is_temporarily_matched": True}})
-    mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"in_match_process": False}})
-    mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"is_temporarily_matched": True}})
-    mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"in_match_process": False}})
+    update_user_field(user_id_1, "is_temporarily_matched", True)
+    update_user_field(user_id_1, "in_match_process", False)
+    update_user_field(user_id_2, "is_temporarily_matched", True)
+    update_user_field(user_id_2, "in_match_process", False)
 
     return
 
@@ -188,31 +201,86 @@ def match_temporarily():
             create_temporary_match(ObjectId(user_id), matched_user_id)
             return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
-    mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": {"in_match_process": True}})
+    update_user_field(user_id, "in_match_process", True)
 
     return dumps({'success':True}), 200, {'ContentType':'application/json'}
 
 @app.route("/users/<user_id>", methods=['GET'])
 def user(user_id):
-    user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+    return user_response_by_id(user_id)
 
-    if user_document is None:
-        error_message = "The user with id " + user_id + " does not exist."
-        abort(400, {'message': error_message})
+@app.route("/users/me", methods=['GET', 'PUT'])
+@cross_origin()
+def user_details():
+    if request.method == 'GET':
+        return get_user_details(request)
+    else:
+        return register_user_details(request)
 
-    resp = jsonify({
-        "id": str(user_document.get('_id')),
-        "name": user_document.get('name'),
-        "email": user_document.get('email'),
-        "location": user_document.get('location'),
-        "gender": user_document.get('gender'),
-        "age": user_document.get('age'),
-        "inMatchProcess": user_document.get('in_match_process'),
-        "isTemporarilyMatched": user_document.get('is_temporarily_matched'),
-        "isPermanentlyMatched": user_document.get('is_permanently_matched')
-        })
+def get_user_details(request):
+    payload = parse_token(request)
+    user_id = payload['sub']
+    return user_response_by_id(user_id)
 
-    return resp
+def register_user_details(request):
+    payload = parse_token(request)
+    user_id = payload['sub']
+
+
+    # Get the request body
+    req_body = request.get_json()
+
+    # Get the data from the request
+    gender = req_body.get('gender')
+    location = req_body.get('location')
+    age = req_body.get('age')
+    ethnicity = req_body.get('ethnicity')
+
+    # Validate data
+    if not gender is None:
+        if type(gender) == str:
+            gender = gender.lower()
+            if gender != "male" and gender != "female":
+                error_message = "Gender can only be male or female"
+                abort(400, {'message': error_message})
+        else:
+            error_message = "Gender should be a string."
+            abort(400, {'message': error_message})
+
+    if not location is None:
+        if type(location) == str:
+            location = location.lower()
+        else:
+            error_message = "Location should be a string."
+            abort(400, {'message': error_message})
+
+    if not age is None:    
+        if age <= 0:
+            error_message = "Age can only be a positive nonzero integer"
+            abort(400, {'message': error_message})
+    
+    if not ethnicity is None:
+        if type(ethnicity) == str:
+            ethnicity = ethnicity.lower()
+        else:
+            error_message = "Ethnicity should be a string."
+            abort(400, {'message': error_message})
+
+    # Update non null fields
+    if not gender is None:
+        update_user_field(user_id, "gender", gender)
+
+    if not location is None:
+        update_user_field(user_id, "location", location)
+
+    if not age is None:
+        update_user_field(user_id, "age", age)
+
+    if not ethnicity is None:
+        update_user_field(user_id, "ethnicity", ethnicity)
+    
+    return user_response_by_id(user_id)
+
 
 @app.route("/conversations", methods=['GET'])
 def conversations():
