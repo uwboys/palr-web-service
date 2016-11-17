@@ -13,8 +13,8 @@ import pymongo
 from pymongo import MongoClient
 from flask_socketio import SocketIO, emit
 from flask import Flask
+from PalrWebService import app
 
-app = Flask(__name__)
 app.debug = True
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
