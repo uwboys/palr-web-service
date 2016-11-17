@@ -56,11 +56,24 @@ def user_to_map(user):
             'location': user.get("location"),
             "gender": user.get('gender'),
             "age": user.get('age'),
+            "ethnicity": user.get('ethnicity'),
             "inMatchProcess": user.get('in_match_process'),
             "isTemporarilyMatched": user.get('is_temporarily_matched'),
             "isPermanentlyMatched": user.get('is_permanently_matched')
         }
 
+def user_response_by_id(user_id):
+    user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+
+    if user_document is None:
+        error_message = "The user with id " + user_id + " does not exist."
+        abort(400, {'message': error_message})
+    
+    resp = jsonify(user_to_map(user_document))
+    return resp
+
+def update_user_field (user_id, field, value):
+    mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": { field: value}})
 
     # Functions for dealing with token generation and authorization
 def parse_token(req):
@@ -77,11 +90,16 @@ def create_temporary_match(user_id_1, user_id_2):
     mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
 
     # Set the above users matched to true
-    mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"is_temporarily_matched": True}})
-    mongo.db.users.update({"_id": ObjectId(user_id_1)}, {"$set": {"in_match_process": False}})
-    mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"is_temporarily_matched": True}})
-    mongo.db.users.update({"_id": ObjectId(user_id_2)}, {"$set": {"in_match_process": False}})
+    update_user_field(user_id_1, "is_temporarily_matched", True)
+    update_user_field(user_id_1, "in_match_process", False)
+    update_user_field(user_id_2, "is_temporarily_matched", True)
+    update_user_field(user_id_2, "in_match_process", False)
 
+    socket_1 = clients[str(user_id_1)]
+    socket_2 = clients[str(user_id_2)]
+
+    socket_1.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+    socket_2.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
     return
 
 # Error Handling
@@ -173,8 +191,9 @@ def match_temporarily():
 
 
     user_in_match_process = user_document.get('in_match_process')
+    user_temporarily_matched = user_document.get('is_temporarily_matched')
     if user_in_match_process is True:
-        return dumps({'success':True}), 200, {'ContentType':'application/json'}
+        return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
 
     # Check our users collection to see if there
     # is someone to match with us
@@ -185,33 +204,97 @@ def match_temporarily():
             # Match with this person
             matched_user_id = record.get('_id')
             create_temporary_match(ObjectId(user_id), matched_user_id)
-            return dumps({'success':True}), 200, {'ContentType':'application/json'}
+            user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+            user_in_match_process = user_document.get('in_match_process')
+            user_temporarily_matched = user_document.get('is_temporarily_matched')
+            return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
 
-    mongo.db.users.update({"_id": ObjectId(user_id)}, {"$set": {"in_match_process": True}})
+    update_user_field(user_id, "in_match_process", True)
+    user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+    user_in_match_process = user_document.get('in_match_process')
+    user_temporarily_matched = user_document.get('is_temporarily_matched')
 
-    return dumps({'success':True}), 200, {'ContentType':'application/json'}
+    print user_in_match_process
+    print user_temporarily_matched
+    
+    return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
 
 @app.route("/users/<user_id>", methods=['GET'])
 def user(user_id):
-    user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+    return user_response_by_id(user_id)
 
-    if user_document is None:
-        error_message = "The user with id " + user_id + " does not exist."
-        abort(400, {'message': error_message})
+@app.route("/users/me", methods=['GET', 'PUT'])
+@cross_origin()
+def user_details():
+    if request.method == 'GET':
+        return get_user_details(request)
+    else:
+        return register_user_details(request)
 
-    resp = jsonify({
-        "id": str(user_document.get('_id')),
-        "name": user_document.get('name'),
-        "email": user_document.get('email'),
-        "location": user_document.get('location'),
-        "gender": user_document.get('gender'),
-        "age": user_document.get('age'),
-        "inMatchProcess": user_document.get('in_match_process'),
-        "isTemporarilyMatched": user_document.get('is_temporarily_matched'),
-        "isPermanentlyMatched": user_document.get('is_permanently_matched')
-        })
+def get_user_details(request):
+    payload = parse_token(request)
+    user_id = payload['sub']
+    return user_response_by_id(user_id)
 
-    return resp
+def register_user_details(request):
+    payload = parse_token(request)
+    user_id = payload['sub']
+
+
+    # Get the request body
+    req_body = request.get_json()
+
+    # Get the data from the request
+    gender = req_body.get('gender')
+    location = req_body.get('location')
+    age = req_body.get('age')
+    ethnicity = req_body.get('ethnicity')
+    
+    # Validate data
+    if not gender is None:
+        if type(gender) == unicode:
+            gender = gender.lower()
+            if gender != "male" and gender != "female":
+                error_message = "Gender can only be male or female"
+                abort(400, {'message': error_message})
+        else:
+            error_message = "Gender should be a string."
+            abort(400, {'message': error_message})
+
+    if not location is None:
+        if type(location) == unicode:
+            location = location.lower()
+        else:
+            error_message = "Location should be a string."
+            abort(400, {'message': error_message})
+
+    if not age is None:
+        if not type(age) is int or age <= 0:
+            error_message = "Age can only be a positive nonzero integer"
+            abort(400, {'message': error_message})
+    
+    if not ethnicity is None:
+        if type(ethnicity) == unicode:
+            ethnicity = ethnicity.lower()
+        else:
+            error_message = "Ethnicity should be a string."
+            abort(400, {'message': error_message})
+
+    # Update non null fields
+    if not gender is None:
+        update_user_field(user_id, "gender", gender)
+
+    if not location is None:
+        update_user_field(user_id, "location", location)
+
+    if not age is None:
+        update_user_field(user_id, "age", age)
+
+    if not ethnicity is None:
+        update_user_field(user_id, "ethnicity", ethnicity)
+    
+    return user_response_by_id(user_id)
+
 
 @app.route("/conversations", methods=['GET'])
 def conversations():
@@ -261,7 +344,7 @@ def get_messages(request):
         offset = 0
     messages = []
     #get messages associated with the conversationDataId
-    cursor = mongo.db.messages.find({"conversation_data_id": ObjectId(conversation_data_id)}).sort('created_at', pymongo.DESCENDING)
+    cursor = mongo.db.messages.find({"conversation_data_id": ObjectId(conversation_data_id)}).sort('created_at', pymongo.ASCENDING)
 
     if cursor.count() > offset or limit != 0:
         i = 0
@@ -286,6 +369,8 @@ def get_messages(request):
             else:
                 break
         return make_response(dumps(messages))
+
+clients = {}
 
 def send_message(request):
     payload = parse_token(request)
@@ -315,22 +400,52 @@ def send_message(request):
 
     # create the message
 
-    print datetime.now()
     message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.now(), "created_by": ObjectId(created_by), "content": content})
     user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(created_by)}))
+
     # get the created message
     record = mongo.db.messages.find_one({"_id": message_id})
     message = {
-            'id': str(record.get('_id')),
-            'conversationDataId': str(conversation_data_id),
-            'createdBy': user_document,
-            'createdAt': str(record.get('created_at')),
-            'content': record.get('content')
-            }
+        'id': str(record.get('_id')),
+        'conversationDataId': str(conversation_data_id),
+        'createdBy': user_document,
+        'createdAt': str(record.get('created_at')),
+        'content': record.get('content')
+    }
 
+    # Emit the event to the required client
+    # First, we must actually get id of the pal
+    print "Logging..."
+    print created_by
+    conversation = mongo.db.conversations.find_one({"conversation_data_id": ObjectId(conversation_data_id),
+                                                    "user": ObjectId(created_by)})
+
+    pal_record_id = str(conversation.get('pal'))
+    print pal_record_id
+
+    # Emit to that 
+    socket = clients[pal_record_id]
+
+    socket.emit('message', message)
+
+    '''
+        for sid in sid_array:
+            socketio.emit('message', message, room=sid, namespace='/ws')
+
+    '''
     return make_response(dumps(message))
 
-clients = {}
+i = 0
+# Object that represents a socket connection
+class Socket:
+    def __init__(self, sid):
+        self.sid = sid
+        self.connected = True
+
+# Emits data to a socket's unique room
+    def emit(self, event, data):
+        emit(event, data, room=self.sid, namespace='/ws', incdude_self=False)
+
 
 @app.route("/messages", methods=['GET', 'POST'])
 def messages():
@@ -339,47 +454,44 @@ def messages():
     else:
         return get_messages(request)
 
-@socketio.on('my_event', namespace='/ws')
-def test_message(message):
-    print message
-    emit('my_response', {'data': message})
-
-@socketio.on('my_broadcast_event', namespace='/ws')
-def test_message(message):
-    print "two"
-    emit('my_response', {'data': message['data']}, broadcast=True)
-
-@socketio.on('token', namespace='/ws')
+@socketio.on('add_client', namespace='/ws')
 def add_client(access_token):
     payload = jwt.decode(access_token, app.secret_key, algorithms='HS256')
     user_id = payload['sub']
 
-
-    request_sid_array = clients[user_id]
-
-    if request_sid_array is None:
-        request_sid_array = [request.sid]
+    print 'clients[' + user_id + '] = ' + request.sid
+    clients[user_id] = Socket(request.sid)
+    join_room(request.sid)
+    ''' 
+    if user_id in clients:
+        clients[user_id].append(request.sid)
     else:
-        request_sid_array.append(request.sid)
+        request_sid_array = [request.sid]
+        clients[user_id] = request_sid_array
+    '''
 
-    clients[user_id] = request.sid
-    print 'Printing the client'
-    print clients[user_id]
+@socketio.on('connected', namespace='/ws')
+def connected():
+    print 'Establishing session connection'
 
-@socketio.on('connect', namespace='/ws')
-def connect():
-    print 'Esatblishing session connection'
-
-@socketio.on('disconnect', namespace='/ws')
-def disconnect():
+@socketio.on('disconnected', namespace='/ws')
+def disconnected():
     print 'disconnecting...'
     # Remove this from clients
     for k, v in clients.items():
+        if v == request.namespace:
+            print 'Deleting client with id ' + k
+            del clients[k]
+
+    leave_room(request.sid)
+    '''
+    for k, v in clients.items():
         for sid in v:
             sid = [item for item in sid if sid != request.sid]
-            if v.length == 0:
+            if len(v) == 0:
                 del clients[k]
                 return
+    '''
 
 
 if __name__ == "__main__":
