@@ -13,9 +13,10 @@ import pymongo
 from pymongo import MongoClient
 from flask_socketio import SocketIO, emit
 from flask import Flask
+from flask import session
+from flask_socketio import emit, join_room, leave_room
 
 app = Flask(__name__)
-app.debug = True
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
 app.config['MONGO_PORT'] = 44989
@@ -91,7 +92,6 @@ def respond400(error):
     return response
 
 @app.route('/login', methods=['POST'])
-@cross_origin()
 def login():
     email = request.get_json().get('email')
     password = request.get_json().get('password')
@@ -117,7 +117,6 @@ def login():
     return resp
 
 @app.route('/register', methods = ['POST'])
-@cross_origin()
 def register():
     name = request.get_json().get('name')
     password = request.get_json().get('password')
@@ -331,6 +330,8 @@ def send_message(request):
 
     return make_response(dumps(message))
 
+clients = {}
+
 @app.route("/messages", methods=['GET', 'POST'])
 def messages():
     if request.method =='POST':
@@ -340,22 +341,45 @@ def messages():
 
 @socketio.on('my_event', namespace='/ws')
 def test_message(message):
-    print "one"
-    emit('my_response', {'data': message['data']})
+    print message
+    emit('my_response', {'data': message})
 
 @socketio.on('my_broadcast_event', namespace='/ws')
 def test_message(message):
     print "two"
     emit('my_response', {'data': message['data']}, broadcast=True)
 
+@socketio.on('token', namespace='/ws')
+def add_client(access_token):
+    payload = jwt.decode(access_token, app.secret_key, algorithms='HS256')
+    user_id = payload['sub']
+
+
+    request_sid_array = clients[user_id]
+
+    if request_sid_array is None:
+        request_sid_array = [request.sid]
+    else:
+        request_sid_array.append(request.sid)
+
+    clients[user_id] = request.sid
+    print 'Printing the client'
+    print clients[user_id]
+
 @socketio.on('connect', namespace='/ws')
-def test_connect():
-    print "three"
-    emit('my_response', {'data': 'Connected'})
+def connect():
+    print 'Esatblishing session connection'
 
 @socketio.on('disconnect', namespace='/ws')
-def test_disconnect():
-    print('Client disconnected')
+def disconnect():
+    print 'disconnecting...'
+    # Remove this from clients
+    for k, v in clients.items():
+        for sid in v:
+            sid = [item for item in sid if sid != request.sid]
+            if v.length == 0:
+                del clients[k]
+                return
 
 
 if __name__ == "__main__":
