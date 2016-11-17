@@ -13,9 +13,10 @@ import pymongo
 from pymongo import MongoClient
 from flask_socketio import SocketIO, emit
 from flask import Flask
-from PalrWebService import app
+from flask import session
+from flask_socketio import emit, join_room, leave_room
 
-app.debug = True
+app = Flask(__name__)
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
 app.config['MONGO_PORT'] = 44989
@@ -173,6 +174,11 @@ def create_temporary_match(user_id_1, user_id_2):
     update_user_field(user_id_2, "is_temporarily_matched", True)
     update_user_field(user_id_2, "in_match_process", False)
 
+    socket_1 = clients[str(user_id_1)]
+    socket_2 = clients[str(user_id_2)]
+
+    socket_1.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+    socket_2.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
     return
 
 # Functions for dealing with token generation and authorization
@@ -201,7 +207,6 @@ def respond400(error):
     return response
 
 @app.route('/login', methods=['POST'])
-@cross_origin()
 def login():
     email = request.get_json().get('email')
     password = request.get_json().get('password')
@@ -227,7 +232,6 @@ def login():
     return resp
 
 @app.route('/register', methods = ['POST'])
-@cross_origin()
 def register():
     # Get the request body
     req_body = request.get_json()
@@ -302,8 +306,9 @@ def match_temporarily():
 
 
     user_in_match_process = user_document.get('in_match_process')
+    user_temporarily_matched = user_document.get('is_temporarily_matched')
     if user_in_match_process is True:
-        return dumps({'success':True}), 200, {'ContentType':'application/json'}
+        return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
 
     # Check our users collection to see if there
     # is someone to match with us
@@ -331,11 +336,17 @@ def match_temporarily():
     # Found a match
     if not matched_user_id is None:
         create_temporary_match(ObjectId(user_id), matched_user_id)
-        return dumps({'success':True}), 200, {'ContentType':'application/json'}
-
+        user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+        user_in_match_process = user_document.get('in_match_process')
+        user_temporarily_matched = user_document.get('is_temporarily_matched')
+        return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
+            
     update_user_field(user_id, "in_match_process", True)
-
-    return dumps({'success':True}), 200, {'ContentType':'application/json'}
+    user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+    user_in_match_process = user_document.get('in_match_process')
+    user_temporarily_matched = user_document.get('is_temporarily_matched')
+    
+    return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
 
 @app.route("/users/<user_id>", methods=['GET'])
 def user(user_id):
@@ -462,7 +473,7 @@ def get_messages(request):
         offset = 0
     messages = []
     #get messages associated with the conversationDataId
-    cursor = mongo.db.messages.find({"conversation_data_id": ObjectId(conversation_data_id)}).sort('created_at', pymongo.DESCENDING)
+    cursor = mongo.db.messages.find({"conversation_data_id": ObjectId(conversation_data_id)}).sort('created_at', pymongo.ASCENDING)
 
     if cursor.count() > offset or limit != 0:
         i = 0
@@ -487,6 +498,8 @@ def get_messages(request):
             else:
                 break
         return make_response(dumps(messages))
+
+clients = {}
 
 def send_message(request):
     payload = parse_token(request)
@@ -516,20 +529,52 @@ def send_message(request):
 
     # create the message
 
-    print datetime.now()
     message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.now(), "created_by": ObjectId(created_by), "content": content})
     user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(created_by)}))
+
     # get the created message
     record = mongo.db.messages.find_one({"_id": message_id})
     message = {
-            'id': str(record.get('_id')),
-            'conversationDataId': str(conversation_data_id),
-            'createdBy': user_document,
-            'createdAt': str(record.get('created_at')),
-            'content': record.get('content')
-            }
+        'id': str(record.get('_id')),
+        'conversationDataId': str(conversation_data_id),
+        'createdBy': user_document,
+        'createdAt': str(record.get('created_at')),
+        'content': record.get('content')
+    }
 
+    # Emit the event to the required client
+    # First, we must actually get id of the pal
+    print "Logging..."
+    print created_by
+    conversation = mongo.db.conversations.find_one({"conversation_data_id": ObjectId(conversation_data_id),
+                                                    "user": ObjectId(created_by)})
+
+    pal_record_id = str(conversation.get('pal'))
+    print pal_record_id
+
+    # Emit to that 
+    socket = clients[pal_record_id]
+
+    socket.emit('message', message)
+
+    '''
+        for sid in sid_array:
+            socketio.emit('message', message, room=sid, namespace='/ws')
+
+    '''
     return make_response(dumps(message))
+
+i = 0
+# Object that represents a socket connection
+class Socket:
+    def __init__(self, sid):
+        self.sid = sid
+        self.connected = True
+
+# Emits data to a socket's unique room
+    def emit(self, event, data):
+        emit(event, data, room=self.sid, namespace='/ws', incdude_self=False)
+
 
 @app.route("/messages", methods=['GET', 'POST'])
 def messages():
@@ -538,24 +583,44 @@ def messages():
     else:
         return get_messages(request)
 
-@socketio.on('my_event', namespace='/ws')
-def test_message(message):
-    print "one"
-    emit('my_response', {'data': message['data']})
+@socketio.on('add_client', namespace='/ws')
+def add_client(access_token):
+    payload = jwt.decode(access_token, app.secret_key, algorithms='HS256')
+    user_id = payload['sub']
 
-@socketio.on('my_broadcast_event', namespace='/ws')
-def test_message(message):
-    print "two"
-    emit('my_response', {'data': message['data']}, broadcast=True)
+    print 'clients[' + user_id + '] = ' + request.sid
+    clients[user_id] = Socket(request.sid)
+    join_room(request.sid)
+    ''' 
+    if user_id in clients:
+        clients[user_id].append(request.sid)
+    else:
+        request_sid_array = [request.sid]
+        clients[user_id] = request_sid_array
+    '''
 
-@socketio.on('connect', namespace='/ws')
-def test_connect():
-    print "three"
-    emit('my_response', {'data': 'Connected'})
+@socketio.on('connected', namespace='/ws')
+def connected():
+    print 'Establishing session connection'
 
-@socketio.on('disconnect', namespace='/ws')
-def test_disconnect():
-    print('Client disconnected')
+@socketio.on('disconnected', namespace='/ws')
+def disconnected():
+    print 'disconnecting...'
+    # Remove this from clients
+    for k, v in clients.items():
+        if v == request.namespace:
+            print 'Deleting client with id ' + k
+            del clients[k]
+
+    leave_room(request.sid)
+    '''
+    for k, v in clients.items():
+        for sid in v:
+            sid = [item for item in sid if sid != request.sid]
+            if len(v) == 0:
+                del clients[k]
+                return
+    '''
 
 
 if __name__ == "__main__":
