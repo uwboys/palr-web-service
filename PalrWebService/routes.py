@@ -315,12 +315,13 @@ def match_temporarily():
     cursor = mongo.db.users.find({'in_match_process' : True})
     for record in cursor:
         # Add to the match vector based on match type
+        curUser = user_to_map(record)
         if match_type == "talk":
-            match_vector[record] = get_match_value_for_talk(user_id, record.get('_id'))
+            match_vector[curUser] = get_match_value_for_talk(user_id, record.get('_id'))
         elif match_type == "listen":
-            match_vector[record] = get_match_value_for_listen(user_id, record.get('_id'))
+            match_vector[curUser] = get_match_value_for_listen(user_id, record.get('_id'))
         else:  # learn
-            match_vector[record] = get_match_value_for_learn(user_id, record.get('_id'))
+            match_vector[curUser] = get_match_value_for_learn(user_id, record.get('_id'))
         
 
     match_vector_keys = match_vector.keys()
@@ -331,7 +332,7 @@ def match_temporarily():
     for key in match_vector_keys:
         if match_vector.get(key) > max_match_value:
             max_match_value = match_vector.get(key)
-            matched_user_id = key.get('_id')
+            matched_user_id = key.get('id')
 
     # Found a match
     if not matched_user_id is None:
