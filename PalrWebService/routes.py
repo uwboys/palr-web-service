@@ -73,8 +73,9 @@ def get_match_value_for_talk(user_id_1, user_id_2):
     user1 = user_response_by_id(user_id_1)
     user2 = user_response_by_id(user_id_2)
     points = 0
-    if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
-        return -1
+    if not user1.get('location') is None or not user2.get('location') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
+        if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+            return -1
     
     if get_match_type(user_id_2) == "talk":
         points += 5
@@ -103,8 +104,9 @@ def get_match_value_for_listen(user_id_1, user_id_2):
     user1 = user_response_by_id(user_id_1)
     user2 = user_response_by_id(user_id_2)
     points = 0
-    if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
-        return -1
+    if not user1.get('location') is None or not user2.get('location') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
+        if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+            return -1
     
     if get_match_type(user_id_2) == "talk":
         points += 20
@@ -133,8 +135,9 @@ def get_match_value_for_learn(user_id_1, user_id_2):
     user1 = user_response_by_id(user_id_1)
     user2 = user_response_by_id(user_id_2)
     points = 0
-    if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
-        return -1
+    if not user1.get('location') is None or not user2.get('location') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
+        if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+            return -1
     
     if get_match_type(user_id_2) == "talk":
         points += 20
@@ -173,6 +176,8 @@ def create_temporary_match(user_id_1, user_id_2):
     update_user_field(user_id_1, "in_match_process", False)
     update_user_field(user_id_2, "is_temporarily_matched", True)
     update_user_field(user_id_2, "in_match_process", False)
+    print user_response_by_id(user_id_1)
+    print user_response_by_id(user_id_2)
 
     socket_1 = clients[str(user_id_1)]
     socket_2 = clients[str(user_id_2)]
@@ -315,13 +320,12 @@ def match_temporarily():
     cursor = mongo.db.users.find({'in_match_process' : True})
     for record in cursor:
         # Add to the match vector based on match type
-        curUser = user_to_map(record)
         if match_type == "talk":
-            match_vector[curUser] = get_match_value_for_talk(user_id, record.get('_id'))
+            match_vector[str(record.get('_id'))] = get_match_value_for_talk(user_id, record.get('_id'))
         elif match_type == "listen":
-            match_vector[curUser] = get_match_value_for_listen(user_id, record.get('_id'))
+            match_vector[str(record.get('_id'))] = get_match_value_for_listen(user_id, record.get('_id'))
         else:  # learn
-            match_vector[curUser] = get_match_value_for_learn(user_id, record.get('_id'))
+            match_vector[str(record.get('_id'))] = get_match_value_for_learn(user_id, record.get('_id'))
         
 
     match_vector_keys = match_vector.keys()
@@ -332,7 +336,7 @@ def match_temporarily():
     for key in match_vector_keys:
         if match_vector.get(key) > max_match_value:
             max_match_value = match_vector.get(key)
-            matched_user_id = key.get('id')
+            matched_user_id = key
 
     # Found a match
     if not matched_user_id is None:
