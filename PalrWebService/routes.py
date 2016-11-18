@@ -10,6 +10,7 @@ from bson import ObjectId
 from time import time
 import jwt
 import pymongo
+import validators
 from pymongo import MongoClient
 from flask_socketio import SocketIO, emit
 from flask import Flask
@@ -46,7 +47,8 @@ def user_to_map(user):
             "ethnicity": user.get('ethnicity'),
             "inMatchProcess": user.get('in_match_process'),
             "isTemporarilyMatched": user.get('is_temporarily_matched'),
-            "isPermanentlyMatched": user.get('is_permanently_matched')
+            "isPermanentlyMatched": user.get('is_permanently_matched'),
+            "imageUrl": user.get('image_url')
         }
 
 def user_response_by_id(user_id):
@@ -267,7 +269,8 @@ def register():
                             "location": location, 
                             "in_match_process": False, 
                             "is_temporarily_matched": False,
-                            "is_permanently_matched": False
+                            "is_permanently_matched": False,
+                            "image_url": "http://res.cloudinary.com/palr/image/upload/v1479435139/default-profile-pic_ujznfp.gif"
                         })
 
     user = User(str(_id), name, password, email, location)
@@ -385,6 +388,7 @@ def register_user_details(request):
     location = req_body.get('location')
     age = req_body.get('age')
     ethnicity = req_body.get('ethnicity')
+    image_url = req_body.get('imageUrl')
 
     # Validate data
     if not gender is None:
@@ -416,6 +420,16 @@ def register_user_details(request):
             error_message = "Ethnicity should be a string."
             abort(400, {'message': error_message})
 
+    if not image_url is None:
+        if type(image_url) == unicode:
+            if validators.url(image_url) is False:
+                error_message = "Image Url is not a valid url"
+                abort(400, {'message': error_message})
+        else:
+            error_message = "Image Url should be a string."
+            abort(400, {'message': error_message})
+
+
     # Update non null fields
     if not gender is None:
         update_user_field(user_id, "gender", gender)
@@ -428,6 +442,9 @@ def register_user_details(request):
 
     if not ethnicity is None:
         update_user_field(user_id, "ethnicity", ethnicity)
+
+    if not image_url is None:
+        update_user_field(user_id, "image_url", image_url)        
     
     return jsonify(user_response_by_id(user_id))
 
