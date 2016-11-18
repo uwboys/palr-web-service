@@ -312,7 +312,7 @@ def match_temporarily():
 
     # Check our users collection to see if there
     # is someone to match with us
-    cursor = mongo.db.users.find({'in_match_process' : true})
+    cursor = mongo.db.users.find({'in_match_process' : True})
     for record in cursor:
         # Add to the match vector based on match type
         if match_type == "talk":
