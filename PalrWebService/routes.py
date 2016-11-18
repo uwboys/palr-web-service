@@ -166,8 +166,7 @@ def create_temporary_match(user_id_1, user_id_2):
     # Create the conversation data
     conversation_data_id = mongo.db.conversation_data.insert({"isPermanent": False, "lastMessageSent": None})
 
-    ts = time()
-    isodate = datetime.fromtimestamp(ts, None)
+    isodate = datetime.utcnow()
     mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
     mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
 
@@ -179,11 +178,14 @@ def create_temporary_match(user_id_1, user_id_2):
     print user_response_by_id(user_id_1)
     print user_response_by_id(user_id_2)
 
-    socket_1 = clients[str(user_id_1)]
-    socket_2 = clients[str(user_id_2)]
+    if str(user_id_1) in clients:
+        socket_1 = clients[str(user_id_1)]
+        socket_1.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
 
-    socket_1.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
-    socket_2.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+    if str(user_id_2) in clients:
+        socket_2 = clients[str(user_id_2)]
+        socket_2.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+
     return
 
 # Functions for dealing with token generation and authorization
@@ -478,7 +480,7 @@ def get_messages(request):
         offset = 0
     messages = []
     #get messages associated with the conversationDataId
-    cursor = mongo.db.messages.find({"conversation_data_id": ObjectId(conversation_data_id)}).sort('created_at', pymongo.ASCENDING)
+    cursor = mongo.db.messages.find({"conversation_data_id": ObjectId(conversation_data_id)}).sort('created_at', pymongo.DESCENDING)
 
     if cursor.count() > offset or limit != 0:
         i = 0
@@ -523,8 +525,7 @@ def send_message(request):
         abort(400, {'message': error_message})
 
     # get the current time
-    ts = time()
-    isodate = datetime.fromtimestamp(ts, None)
+    isodate = datetime.utcnow()
 
 
     # update conversations last update data
@@ -534,7 +535,7 @@ def send_message(request):
 
     # create the message
 
-    message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.now(), "created_by": ObjectId(created_by), "content": content})
+    message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.utcnow(), "created_by": ObjectId(created_by), "content": content})
     user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(created_by)}))
 
     # get the created message
@@ -558,9 +559,9 @@ def send_message(request):
     print pal_record_id
 
     # Emit to that 
-    socket = clients[pal_record_id]
-
-    socket.emit('message', message)
+    if pal_record_id in clients:
+        socket = clients[pal_record_id]
+        socket.emit('message', message)
 
     '''
         for sid in sid_array:
