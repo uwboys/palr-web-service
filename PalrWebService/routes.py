@@ -56,7 +56,7 @@ def user_response_by_id(user_id):
         error_message = "The user with id " + user_id + " does not exist."
         abort(400, {'message': error_message})
     
-    resp = jsonify(user_to_map(user_document))
+    resp = user_to_map(user_document)
     return resp
 
 def update_user_field (user_id, field, value):
@@ -350,7 +350,7 @@ def match_temporarily():
 
 @app.route("/users/<user_id>", methods=['GET'])
 def user(user_id):
-    return user_response_by_id(user_id)
+    return jsonify(user_response_by_id(user_id))
 
 @app.route("/users/me", methods=['GET', 'PUT'])
 @cross_origin()
@@ -363,7 +363,7 @@ def user_details():
 def get_user_details(request):
     payload = parse_token(request)
     user_id = payload['sub']
-    return user_response_by_id(user_id)
+    return jsonify(user_response_by_id(user_id))
 
 def register_user_details(request):
     payload = parse_token(request)
@@ -422,7 +422,7 @@ def register_user_details(request):
     if not ethnicity is None:
         update_user_field(user_id, "ethnicity", ethnicity)
     
-    return user_response_by_id(user_id)
+    return jsonify(user_response_by_id(user_id))
 
 
 @app.route("/conversations", methods=['GET'])
