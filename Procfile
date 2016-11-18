@@ -1,1 +1,2 @@
-web: gunicorn -b 0.0.0.0:$PORT herokurunserver:app
+heroku ps:scale web=1
+web: python herokurunserver.py
