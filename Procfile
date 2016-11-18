@@ -1,1 +1,1 @@
-web: python herokurunserver.py
+web: gunicorn -b 0.0.0.0:$PORT herokurunserver:app
