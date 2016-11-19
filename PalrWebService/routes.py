@@ -16,7 +16,6 @@ from flask_socketio import SocketIO, emit
 from flask import Flask
 from flask import session
 from flask_socketio import emit, join_room, leave_room
-from PalrWebService import app
 
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
@@ -48,7 +47,8 @@ def user_to_map(user):
             "inMatchProcess": user.get('in_match_process'),
             "isTemporarilyMatched": user.get('is_temporarily_matched'),
             "isPermanentlyMatched": user.get('is_permanently_matched'),
-            "imageUrl": user.get('image_url')
+            "imageUrl": user.get('image_url'),
+            "hobbies": user.get('hobbies')
         }
 
 def user_response_by_id(user_id):
@@ -168,6 +168,10 @@ def create_temporary_match(user_id_1, user_id_2):
     # Create the conversation data
     conversation_data_id = mongo.db.conversation_data.insert({"isPermanent": False, "lastMessageSent": None})
 
+    print "printing ids..."
+    print type(user_id_1)
+    print type(user_id_2)
+
     isodate = datetime.utcnow()
     mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
     mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
@@ -180,13 +184,8 @@ def create_temporary_match(user_id_1, user_id_2):
     print user_response_by_id(user_id_1)
     print user_response_by_id(user_id_2)
 
-    if str(user_id_1) in clients:
-        socket_1 = clients[str(user_id_1)]
-        socket_1.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
-
-    if str(user_id_2) in clients:
-        socket_2 = clients[str(user_id_2)]
-        socket_2.emit('matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+    emit_to_clients(str(user_id_1), 'matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+    emit_to_clients(str(user_id_2), 'matched', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
 
     return
 
@@ -355,7 +354,7 @@ def match_temporarily():
 
     # Found a match
     if not matched_user_id is None:
-        create_temporary_match(ObjectId(user_id), matched_user_id)
+        create_temporary_match(ObjectId(user_id), ObjectId(matched_user_id))
         user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
         user_in_match_process = user_document.get('in_match_process')
         user_temporarily_matched = user_document.get('is_temporarily_matched')
@@ -378,6 +377,7 @@ def user_details():
     if request.method == 'GET':
         return get_user_details(request)
     else:
+        print "registering user details"
         return register_user_details(request)
 
 def get_user_details(request):
@@ -399,9 +399,10 @@ def register_user_details(request):
     age = req_body.get('age')
     ethnicity = req_body.get('ethnicity')
     image_url = req_body.get('imageUrl')
+    hobbies = req_body.get('hobbies')
 
     # Validate data
-    if not gender is None:
+    if gender is not None:
         if type(gender) == unicode:
             gender = gender.lower()
             if gender != "male" and gender != "female":
@@ -411,26 +412,26 @@ def register_user_details(request):
             error_message = "Gender should be a string."
             abort(400, {'message': error_message})
 
-    if not location is None:
+    if location is not None:
         if type(location) == unicode:
             location = location.lower()
         else:
             error_message = "Location should be a string."
             abort(400, {'message': error_message})
 
-    if not age is None:
-        if not type(age) is int or age <= 0:
+    if age is not None:
+        if type(age) is not int or age <= 0:
             error_message = "Age can only be a positive nonzero integer"
             abort(400, {'message': error_message})
     
-    if not ethnicity is None:
+    if ethnicity is not None:
         if type(ethnicity) == unicode:
             ethnicity = ethnicity.lower()
         else:
             error_message = "Ethnicity should be a string."
             abort(400, {'message': error_message})
 
-    if not image_url is None:
+    if image_url is not None:
         if type(image_url) == unicode:
             if validators.url(image_url) is False:
                 error_message = "Image Url is not a valid url"
@@ -439,22 +440,24 @@ def register_user_details(request):
             error_message = "Image Url should be a string."
             abort(400, {'message': error_message})
 
-
     # Update non null fields
-    if not gender is None:
+    if gender is not None:
         update_user_field(user_id, "gender", gender)
 
-    if not location is None:
+    if location is not None:
         update_user_field(user_id, "location", location)
 
-    if not age is None:
+    if age is not None:
         update_user_field(user_id, "age", age)
 
-    if not ethnicity is None:
+    if ethnicity is not None:
         update_user_field(user_id, "ethnicity", ethnicity)
 
-    if not image_url is None:
+    if image_url is not None:
         update_user_field(user_id, "image_url", image_url)        
+
+    if hobbies is not None:
+        update_user_field(user_id, "hobbies", hobbies)
     
     return jsonify(user_response_by_id(user_id))
 
@@ -586,10 +589,7 @@ def send_message(request):
     print pal_record_id
 
     # Emit to that 
-    if pal_record_id in clients:
-        socket = clients[pal_record_id]
-        socket.emit('message', message)
-
+    emit_to_clients(pal_record_id, 'message', message)
     '''
         for sid in sid_array:
             socketio.emit('message', message, room=sid, namespace='/ws')
@@ -597,7 +597,13 @@ def send_message(request):
     '''
     return make_response(dumps(message))
 
-i = 0
+def emit_to_clients(user_id, event, data):
+    # Emit to that 
+    if user_id in clients:
+        for socket in clients[user_id]:
+            socket.emit(event, data)
+
+
 # Object that represents a socket connection
 class Socket:
     def __init__(self, sid):
@@ -622,7 +628,13 @@ def add_client(access_token):
     user_id = payload['sub']
 
     print 'clients[' + user_id + '] = ' + request.sid
-    clients[user_id] = Socket(request.sid)
+
+    if user_id in clients:
+        clients[user_id].append(Socket(request.sid))
+    else:
+        sockets = [Socket(request.sid)]
+        clients[user_id] = sockets
+
     join_room(request.sid)
     ''' 
     if user_id in clients:
