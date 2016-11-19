@@ -569,8 +569,8 @@ def conversations():
                 'createdAt': str(record.get("created_at")),
                 'conversationDataId': conversation_data_id,
                 'lastMessageDate': last_message_date,
-                'isPermanent' : str(record.get("is_permanent")),
-                'requestPermanent' : str(record.get("request_permanent")),
+                'isPermanent' : record.get("is_permanent"),
+                'requestPermanent' : record.get("request_permanent")
                 }
         conversations_list.append(data)
 
