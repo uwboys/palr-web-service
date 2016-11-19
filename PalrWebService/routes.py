@@ -1,13 +1,13 @@
 from flask import Flask, jsonify, request, Response, abort, make_response
 from bson.json_util import dumps
-from time import gmtime, strftime
+from time import gmtime, strftime, time
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_pymongo import PyMongo
 from flask_cors import CORS, cross_origin
 from models.user import User
 from datetime import datetime, timedelta
 from bson import ObjectId
-from time import time
+import atexit
 import jwt
 import pymongo
 import validators
@@ -17,6 +17,8 @@ from flask_socketio import SocketIO, emit
 from flask import Flask
 from flask import session
 from flask_socketio import emit, join_room, leave_room
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 app = Flask(__name__)
 
@@ -35,6 +37,30 @@ app.config['SECRET_KEY'] = 'super-secret-key'
 socketio = SocketIO(app)
 
 mongo = PyMongo(app, config_prefix='MONGO')
+
+# Utility functions to clean conversations
+def purge_old_conversations():
+    current_time = datetime.utcnow()
+    conversations = mongo.db.conversations.find({'isPermanent': False})
+    for conversation in conversations:
+        created_at = conversation.get('created_at')
+        diff = current_time - created_at
+        if diff.days > 3:
+            mongo.db.conversations.remove({'_id': ObjectId(conversation.get('_id'))})
+
+
+scheduler = BackgroundScheduler()
+scheduler.start()
+scheduler.add_job(
+    func=purge_old_conversations,
+    trigger=IntervalTrigger(hours=1),
+    id='purge_conversations_job',
+    name='Deletes temporary conversations that are older than 3 days',
+    replace_existing=True)
+
+# Shut down the scheduler when exiting the app
+atexit.register(lambda: scheduler.shutdown())
+
 
 # Utility Functions for Users
 def user_to_map(user):
@@ -543,7 +569,8 @@ def conversations():
                 'createdAt': str(record.get("created_at")),
                 'conversationDataId': conversation_data_id,
                 'lastMessageDate': last_message_date,
-                'isPermanent' : str(record.get("is_permanent"))
+                'isPermanent' : record.get("is_permanent"),
+                'requestPermanent' : record.get("request_permanent")
                 }
         conversations_list.append(data)
 
