@@ -185,8 +185,8 @@ def create_temporary_match(user_id_1, user_id_2):
     print type(user_id_2)
 
     isodate = datetime.utcnow()
-    mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
-    mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate})
+    mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
+    mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
 
     # Set the above users matched to true
     update_user_field(user_id_1, "is_temporarily_matched", True)
@@ -329,6 +329,10 @@ def match_permanently():
 
         emit_to_clients(str(user_id), 'permanent_match', dumps({"conversation_id": conversation_id}))
         emit_to_clients(str(other_converstion.get('user')), 'permanent_match', dumps({"conversation_id": str(other_conversation.get('user'))}))
+
+        # Make conversation Permanent
+        mongo.db.conversations.update({"_id": ObjectId(conversation_id)}, {"$set": { "is_permanent": True}})
+        mongo.db.conversations.update({"_id": ObjectId(other_conversation.get('_id'))}, {"$set": { "is_permanent": True}})
 
         return dumps({"status": "Permanent Match Created."}), 200, {'ContentType':'application/json'}
 
@@ -539,7 +543,7 @@ def conversations():
                 'createdAt': str(record.get("created_at")),
                 'conversationDataId': conversation_data_id,
                 'lastMessageDate': last_message_date,
-                'request_permanent' : False
+                'isPermanent' : str(record.get("is_permanent"))
                 }
         conversations_list.append(data)
 
