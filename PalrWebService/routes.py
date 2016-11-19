@@ -366,7 +366,7 @@ def match_permanently():
 
         return dumps({"status": "Permanent Match Created."}), 200, {'ContentType':'application/json'}
 
-    return dumps({"status": "Waiting for other user to request to make the conversation permanent."}), 200, {'ContentType':'application/json'}
+    return dumps({"message": "Waiting for other user to request to make the conversation permanent."}), 200, {'ContentType':'application/json'}
 
 @app.route("/match", methods=['POST'])
 def match_temporarily():
