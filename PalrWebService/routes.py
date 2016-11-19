@@ -16,6 +16,7 @@ from flask_socketio import SocketIO, emit
 from flask import Flask
 from flask import session
 from flask_socketio import emit, join_room, leave_room
+from PalrWebService import app
 
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
