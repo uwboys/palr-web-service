@@ -164,6 +164,16 @@ def get_match_value_for_learn(user_id_1, user_id_2):
 
     return points
 
+def not_already_permanently_matched(user, pal):
+    conversations = mongo.db.conversations.find({'user': ObjectId(user)})
+    
+    for conversation in conversations:
+        # If a conversation already exists between user and pal then it has to be a permanently matched conversation.
+        if conversation.get('pal') == pal:
+            return False
+
+    return True
+
 
 def create_temporary_match(user_id_1, user_id_2):
     # Create the conversation data
@@ -291,7 +301,33 @@ def match_permanently():
     # Get the request body
     req_body = request.get_json()
 
+    conversation_id = req_body.get('conversationId')
+    conversation_document = mongo.db.conversations.find_one({'_id': ObjectId(conversation_id)})
 
+
+    mongo.db.conversations.update({"_id": ObjectId(conversation_id)}, {"$set": { "request_permanent": True}})
+
+    conversations = mongo.db.conversations.find({'pal': ObjectId(user_id)})
+    other_conversation = None
+    
+    for possible_other_conversation in conversations:
+        if possible_other_conversation.get('user') == conversation_document.get('pal'):
+            other_conversation = possible_other_conversation
+            break
+
+    if other_conversation is None:
+        error_message = "Internal error. No matching conversation for with the given id."
+        abort(400, {'message': error_message})        
+
+    if other_conversation.get('request_permanent') is True:
+        # Users can match again with someone else
+        update_user_field(user_id, "is_temporarily_matched", False)
+        update_user_field(str(other_conversation.get('user')), "is_temporarily_matched", False)
+        update_user_field(user_id, "is_permanently_matched", True)
+        update_user_field(str(other_conversation.get('user')), "is_permanently_matched", True)
+        return dumps({"status": "Permanent Match Created."}), 200, {'ContentType':'application/json'}
+
+    return dumps({"status": "Waiting for other user to request to make the conversation permanent."}), 200, {'ContentType':'application/json'}
 
 @app.route("/match", methods=['POST'])
 def match_temporarily():
@@ -334,13 +370,14 @@ def match_temporarily():
     # is someone to match with us
     cursor = mongo.db.users.find({'in_match_process' : True})
     for record in cursor:
-        # Add to the match vector based on match type
-        if match_type == "talk":
-            match_vector[str(record.get('_id'))] = get_match_value_for_talk(user_id, record.get('_id'))
-        elif match_type == "listen":
-            match_vector[str(record.get('_id'))] = get_match_value_for_listen(user_id, record.get('_id'))
-        else:  # learn
-            match_vector[str(record.get('_id'))] = get_match_value_for_learn(user_id, record.get('_id'))
+        if not_already_permanently_matched (user_id, str(record.get('_id'))):
+            # Add to the match vector based on match type
+            if match_type == "talk":
+                match_vector[str(record.get('_id'))] = get_match_value_for_talk(user_id, record.get('_id'))
+            elif match_type == "listen":
+                match_vector[str(record.get('_id'))] = get_match_value_for_listen(user_id, record.get('_id'))
+            else:  # learn
+                match_vector[str(record.get('_id'))] = get_match_value_for_learn(user_id, record.get('_id'))
         
 
     match_vector_keys = match_vector.keys()
@@ -389,7 +426,6 @@ def get_user_details(request):
 def register_user_details(request):
     payload = parse_token(request)
     user_id = payload['sub']
-
 
     # Get the request body
     req_body = request.get_json()
@@ -441,6 +477,11 @@ def register_user_details(request):
             error_message = "Image Url should be a string."
             abort(400, {'message': error_message})
 
+    if hobbies is not None:
+        if type (hobbies) != list:
+            error_message = "Hobbies must be an array/list of strings."
+            abort(400, {'message': error_message})            
+
     # Update non null fields
     if gender is not None:
         update_user_field(user_id, "gender", gender)
@@ -486,7 +527,8 @@ def conversations():
                 'pal': pal_document,
                 'createdAt': str(record.get("created_at")),
                 'conversationDataId': conversation_data_id,
-                'lastMessageDate': last_message_date
+                'lastMessageDate': last_message_date,
+                'request_permanent' : False
                 }
         conversations_list.append(data)
 
@@ -565,7 +607,6 @@ def send_message(request):
         mongo.db.conversations.update({"_id": record.get('_id')}, {"$set": {"last_message_date": isodate}})
 
     # create the message
-
     message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.utcnow(), "created_by": ObjectId(created_by), "content": content})
     user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(created_by)}))
 
