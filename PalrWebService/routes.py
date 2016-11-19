@@ -283,6 +283,16 @@ def register():
 
     return resp
 
+@app.route("/match/permanent", methods=['POST'])
+def match_permanently():
+    payload = parse_token(request)
+    user_id = payload['sub']
+
+    # Get the request body
+    req_body = request.get_json()
+
+
+
 @app.route("/match", methods=['POST'])
 def match_temporarily():
     payload = parse_token(request)
