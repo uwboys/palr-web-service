@@ -329,6 +329,10 @@ def match_permanently():
     req_body = request.get_json()
 
     conversation_id = req_body.get('conversationId')
+    if conversation_id is None:
+        error_message = "Missing required field or passing null value conversationId."
+        abort(400, {'message': error_message})
+
     conversation_document = mongo.db.conversations.find_one({'_id': ObjectId(conversation_id)})
 
 
