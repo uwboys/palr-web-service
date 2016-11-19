@@ -11,6 +11,7 @@ from time import time
 import jwt
 import pymongo
 import validators
+import global_constants
 from pymongo import MongoClient
 from flask_socketio import SocketIO, emit
 from flask import Flask
@@ -41,7 +42,7 @@ def user_to_map(user):
             'id': str(user.get("_id")),
             'name': user.get("name"),
             'email': user.get("email"),
-            'location': user.get("location"),
+            'country': user.get("country"),
             "gender": user.get('gender'),
             "age": user.get('age'),
             "ethnicity": user.get('ethnicity'),
@@ -76,8 +77,8 @@ def get_match_value_for_talk(user_id_1, user_id_2):
     user1 = user_response_by_id(user_id_1)
     user2 = user_response_by_id(user_id_2)
     points = 0
-    if not user1.get('location') is None or not user2.get('location') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
-        if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+    if not user1.get('country') is None or not user2.get('country') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
+        if user1.get('country') == user2.get('country') and user1.get('ethnicity') == user2.get('ethnicity'):
             return -1
     
     if get_match_type(user_id_2) == "talk":
@@ -107,8 +108,8 @@ def get_match_value_for_listen(user_id_1, user_id_2):
     user1 = user_response_by_id(user_id_1)
     user2 = user_response_by_id(user_id_2)
     points = 0
-    if not user1.get('location') is None or not user2.get('location') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
-        if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+    if not user1.get('country') is None or not user2.get('country') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
+        if user1.get('country') == user2.get('country') and user1.get('ethnicity') == user2.get('ethnicity'):
             return -1
     
     if get_match_type(user_id_2) == "talk":
@@ -138,8 +139,8 @@ def get_match_value_for_learn(user_id_1, user_id_2):
     user1 = user_response_by_id(user_id_1)
     user2 = user_response_by_id(user_id_2)
     points = 0
-    if not user1.get('location') is None or not user2.get('location') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
-        if user1.get('location') == user2.get('location') and user1.get('ethnicity') == user2.get('ethnicity'):
+    if not user1.get('country') is None or not user2.get('country') is None or not user1.get('ethnicity') is None or not user2.get('ethnicity') is None:
+        if user1.get('country') == user2.get('country') and user1.get('ethnicity') == user2.get('ethnicity'):
             return -1
     
     if get_match_type(user_id_2) == "talk":
@@ -258,12 +259,12 @@ def register():
     name = req_body.get('name')
     password = req_body.get('password')
     email = req_body.get('email')
-    location = req_body.get('location')
+    country = req_body.get('country')
 
     if name is None or password is None or email is None:
         # missing arguments
         abort(400, {'message': 'Missing required parameters' \
-                ' name, password, email, and location are ALL required.'})
+                ' name, password, email, and country are ALL required.'})
 
         # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
@@ -276,14 +277,14 @@ def register():
                             "name": name, 
                             "password": generate_password_hash(password), 
                             "email" : email, 
-                            "location": location, 
+                            "country": country, 
                             "in_match_process": False, 
                             "is_temporarily_matched": False,
                             "is_permanently_matched": False,
                             "image_url": "http://res.cloudinary.com/palr/image/upload/v1479435139/default-profile-pic_ujznfp.gif"
                         })
 
-    user = User(str(_id), name, password, email, location)
+    user = User(str(_id), name, password, email, country)
 
     # Now we have the Id, we need to create a jwt access token
     # and send the corresponding response back
@@ -432,7 +433,7 @@ def register_user_details(request):
 
     # Get the data from the request
     gender = req_body.get('gender')
-    location = req_body.get('location')
+    country = req_body.get('country')
     age = req_body.get('age')
     ethnicity = req_body.get('ethnicity')
     image_url = req_body.get('imageUrl')
@@ -449,11 +450,14 @@ def register_user_details(request):
             error_message = "Gender should be a string."
             abort(400, {'message': error_message})
 
-    if location is not None:
-        if type(location) == unicode:
-            location = location.lower()
+    if country is not None:
+        if type(country) == unicode:
+            if not country.title() in global_countries:
+                error_message = "country is not a valid country."
+                abort(400, {'message': error_message})    
+            country = country.lower()
         else:
-            error_message = "Location should be a string."
+            error_message = "Country should be a string."
             abort(400, {'message': error_message})
 
     if age is not None:
@@ -463,6 +467,9 @@ def register_user_details(request):
     
     if ethnicity is not None:
         if type(ethnicity) == unicode:
+            if not ethnicity.title() in global_ethnicities:
+                error_message = "The ethnicity is not valid."
+                abort(400, {'message': error_message})    
             ethnicity = ethnicity.lower()
         else:
             error_message = "Ethnicity should be a string."
@@ -486,8 +493,8 @@ def register_user_details(request):
     if gender is not None:
         update_user_field(user_id, "gender", gender)
 
-    if location is not None:
-        update_user_field(user_id, "location", location)
+    if country is not None:
+        update_user_field(user_id, "country", country)
 
     if age is not None:
         update_user_field(user_id, "age", age)
