@@ -17,9 +17,9 @@ from flask_socketio import SocketIO, emit
 from flask import Flask
 from flask import session
 from flask_socketio import emit, join_room, leave_room
-from PalrWebService import app
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from PalrWebService import app
 
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
@@ -219,9 +219,8 @@ def create_temporary_match(user_id_1, user_id_2):
     update_user_field(user_id_1, "in_match_process", False)
     update_user_field(user_id_2, "is_temporarily_matched", True)
     update_user_field(user_id_2, "in_match_process", False)
-    print user_response_by_id(user_id_1)
-    print user_response_by_id(user_id_2)
 
+    print "Emitting temporary match"
     emit_to_clients(str(user_id_1), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
     emit_to_clients(str(user_id_2), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
 
@@ -357,14 +356,15 @@ def match_permanently():
         update_user_field(user_id, "is_permanently_matched", True)
         update_user_field(str(other_conversation.get('user')), "is_permanently_matched", True)
 
-        emit_to_clients(str(user_id), 'permanent_match', dumps({"conversation_id": conversation_id}))
-        emit_to_clients(str(other_converstion.get('user')), 'permanent_match', dumps({"conversation_id": str(other_conversation.get('user'))}))
-
         # Make conversation Permanent
         mongo.db.conversations.update({"_id": ObjectId(conversation_id)}, {"$set": { "is_permanent": True}})
         mongo.db.conversations.update({"_id": ObjectId(other_conversation.get('_id'))}, {"$set": { "is_permanent": True}})
 
-        return dumps({"message": "Permanent Match Created."}), 200, {'ContentType':'application/json'}
+        print "Emitting permanent match"
+        emit_to_clients(str(user_id), 'permanent_match', dumps({"conversation_id": conversation_id}))
+        emit_to_clients(str(other_conversation.get('user')), 'permanent_match', dumps({"conversation_id": str(other_conversation.get('user'))}))
+
+        return dumps({"status": "Permanent Match Created."}), 200, {'ContentType':'application/json'}
 
     return dumps({"message": "Waiting for other user to request to make the conversation permanent."}), 200, {'ContentType':'application/json'}
 
@@ -740,12 +740,15 @@ def connected():
 def disconnected():
     print 'disconnecting...'
     # Remove this from clients
-    for k, v in clients.items():
-        if v == request.namespace:
-            print 'Deleting client with id ' + k
-            del clients[k]
-
     leave_room(request.sid)
+    for k, v in clients.items():
+        if v[-1].request.sid == request.sid:
+            print 'Deleting client with id ' + k
+            v.pop()
+            if len(v) == 0:
+                print 'Deleting key'
+                del clients[k]
+
     '''
     for k, v in clients.items():
         for sid in v:
