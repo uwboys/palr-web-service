@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from flask import Flask, jsonify, request, Response, abort, make_response
 from bson.json_util import dumps
 from time import gmtime, strftime, time
@@ -5,6 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_pymongo import PyMongo
 from flask_cors import CORS, cross_origin
 from models.user import User
+from global_constants import global_countries, global_ethnicities
 from datetime import datetime, timedelta
 from bson import ObjectId
 import atexit
