@@ -66,14 +66,20 @@ atexit.register(lambda: scheduler.shutdown())
 
 # Utility Functions for Users
 def user_to_map(user):
+    country = user.get("country")
+    if country is not None:
+        country = str(country).title()
+    ethnicity = user.get('ethnicity')
+    if ethnicity is not None:
+        ethnicity = str(ethnicity).title()
     return {
             'id': str(user.get("_id")),
             'name': user.get("name"),
             'email': user.get("email"),
-            'country': user.get("country").title(),
+            'country': country,
             "gender": user.get('gender'),
             "age": user.get('age'),
-            "ethnicity": user.get('ethnicity').title(),
+            "ethnicity": ethnicity,
             "inMatchProcess": user.get('in_match_process'),
             "isTemporarilyMatched": user.get('is_temporarily_matched'),
             "isPermanentlyMatched": user.get('is_permanently_matched'),
