@@ -21,7 +21,6 @@ from flask import session
 from flask_socketio import emit, join_room, leave_room
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from PalrWebService import app
 
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
@@ -242,7 +241,7 @@ def create_token(user_id):
             #issued at
             'iat': datetime.utcnow(),
             #expiry
-            'exp': datetime.utcnow() + timedelta(days=1)
+            'exp': datetime.utcnow() + timedelta(days=5)
             }
 
     token = jwt.encode(payload, app.secret_key, algorithm='HS256')
@@ -372,9 +371,9 @@ def match_permanently():
         emit_to_clients(str(user_id), 'permanent_match', dumps({"conversation_id": conversation_id}))
         emit_to_clients(str(other_conversation.get('user')), 'permanent_match', dumps({"conversation_id": str(other_conversation.get('user'))}))
 
-        return dumps({"status": "Permanent Match Created."}), 200, {'ContentType':'application/json'}
+        return dumps({"message": "Permanent Match Created."}), 200, {'Content-Type':'application/json'}
 
-    return dumps({"message": "Waiting for other user to request to make the conversation permanent."}), 200, {'ContentType':'application/json'}
+    return dumps({"message": "Waiting for other user to request to make the conversation permanent."}), 200, {'Content-Type':'application/json'}
 
 @app.route("/match", methods=['POST'])
 def match_temporarily():
