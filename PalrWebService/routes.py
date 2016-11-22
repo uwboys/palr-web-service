@@ -21,6 +21,7 @@ from flask import session
 from flask_socketio import emit, join_room, leave_room
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from PalrWebService import app
 
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
