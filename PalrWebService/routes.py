@@ -12,6 +12,7 @@ from bson import ObjectId
 import atexit
 import jwt
 import pymongo
+import re
 import validators
 import global_constants
 from pymongo import MongoClient
@@ -474,10 +475,14 @@ def register_user_details(request):
     payload = parse_token(request)
     user_id = payload['sub']
 
+    regex = "^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$"
+
     # Get the request body
     req_body = request.get_json()
 
     # Get the data from the request
+    name = req_body.get('name')
+    email = req_body.get('email')
     gender = req_body.get('gender')
     country = req_body.get('country')
     age = req_body.get('age')
@@ -486,6 +491,24 @@ def register_user_details(request):
     hobbies = req_body.get('hobbies')
 
     # Validate data
+    if name is not None:
+        if type(name) == unicode:
+            name = name.title()
+            if len(name) == 0:
+                name = None
+        else:
+            error_message = "Name should be a string."
+            abort(400, {'message': error_message})
+
+    if email is not None:
+        if type(email) == unicode:
+            if not re.match(regex, email):
+                error_message = "Provided email was invalid."
+                abort(400, {'message': error_message})
+        else:
+            error_message = "Email should be a string."
+            abort(400, {'message': error_message})
+
     if gender is not None:
         if type(gender) == unicode:
             gender = gender.lower()
@@ -533,9 +556,15 @@ def register_user_details(request):
     if hobbies is not None:
         if type (hobbies) != list:
             error_message = "Hobbies must be an array/list of strings."
-            abort(400, {'message': error_message})            
+            abort(400, {'message': error_message})        
 
     # Update non null fields
+    if name is not None:
+        update_user_field(user_id, "name", name)
+
+    if email is not None:
+        update_user_field(user_id, "email", email)
+
     if gender is not None:
         update_user_field(user_id, "gender", gender)
 
