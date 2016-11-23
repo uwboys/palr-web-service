@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 import atexit
 import jwt
+import logging
 import pymongo
 import re
 import validators
@@ -41,30 +42,39 @@ socketio = SocketIO(app)
 
 mongo = PyMongo(app, config_prefix='MONGO')
 
+log = logging.getLogger('apscheduler.executors.default')
+log.setLevel(logging.INFO)  # DEBUG
+
+fmt = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+h = logging.StreamHandler()
+h.setFormatter(fmt)
+log.addHandler(h)
+
 # Utility functions to clean conversations
 def purge_old_conversations():
-    current_time = datetime.utcnow()
-    conversations = mongo.db.conversations.find({'isPermanent': False})
-    for conversation in conversations:
-        created_at = conversation.get('created_at')
-        user = conversation.get('user')
-        pal = conversation.get('pal')
-        diff = current_time - created_at
-        if diff.days > 3:
-            mongo.db.conversations.remove({'_id': ObjectId(conversation.get('_id'))})
-            update_user_field(user, "is_temporarily_matched", False)
-            update_user_field(pal, "is_temporarily_matched", False)
+    with app.app_context():
+        current_time = datetime.utcnow()
+        conversations = mongo.db.conversations.find({'is_permanent': False})
+        for conversation in conversations:
+            created_at = str(conversation.get('created_at'))
+            user = conversation.get('user')
+            pal = conversation.get('pal')
+            created_at_datetime = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S.%f+00:00")
+            diff = current_time - created_at_datetime
+            if diff.days > 3:
+                mongo.db.conversations.remove({'_id': ObjectId(conversation.get('_id'))})
+                update_user_field(user, "is_temporarily_matched", False)
+                update_user_field(pal, "is_temporarily_matched", False)
 
 
 scheduler = BackgroundScheduler()
-scheduler.start()
 scheduler.add_job(
     func=purge_old_conversations,
     trigger=IntervalTrigger(hours=1),
     id='purge_conversations_job',
     name='Deletes temporary conversations that are older than 3 days',
     replace_existing=True)
-
+scheduler.start()
 # Shut down the scheduler when exiting the app
 atexit.register(lambda: scheduler.shutdown())
 
@@ -286,7 +296,7 @@ def register():
         if not re.match(regex, email):
             error_message = "Provided email was invalid."
             abort(400, {'message': error_message})
-            
+
         # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
         # Email already exists
@@ -531,6 +541,9 @@ def register_user_details(request):
 
     if email is not None:
         if type(email) == unicode:
+            if len(email) == 0:
+                error_message = "Provided email was empty."
+                abort(400, {'message': error_message})
             if not re.match(regex, email):
                 error_message = "Provided email was invalid."
                 abort(400, {'message': error_message})
