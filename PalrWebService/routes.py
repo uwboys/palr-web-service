@@ -47,9 +47,13 @@ def purge_old_conversations():
     conversations = mongo.db.conversations.find({'isPermanent': False})
     for conversation in conversations:
         created_at = conversation.get('created_at')
+        user = conversation.get('user')
+        pal = conversation.get('pal')
         diff = current_time - created_at
         if diff.days > 3:
             mongo.db.conversations.remove({'_id': ObjectId(conversation.get('_id'))})
+            update_user_field(user, "is_temporarily_matched", False)
+            update_user_field(pal, "is_temporarily_matched", False)
 
 
 scheduler = BackgroundScheduler()
@@ -278,6 +282,11 @@ def register():
         abort(400, {'message': 'Missing required parameters' \
                 ' name, password, email, and country are ALL required.'})
 
+    if type(email) == unicode:
+        if not re.match(regex, email):
+            error_message = "Provided email was invalid."
+            abort(400, {'message': error_message})
+            
         # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
         # Email already exists
