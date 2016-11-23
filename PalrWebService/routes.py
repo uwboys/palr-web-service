@@ -314,7 +314,7 @@ def register():
                             "in_match_process": False, 
                             "is_temporarily_matched": False,
                             "is_permanently_matched": False,
-                            "image_url": "http://res.cloudinary.com/palr/image/upload/v1479435139/default-profile-pic_ujznfp.gif"
+                            "image_url": "http://res.cloudinary.com/palr/image/upload/v1479864897/default-profile-pic_gmwop0.jpg"
                         })
 
     user = User(str(_id), name, password, email, country)
