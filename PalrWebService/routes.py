@@ -430,6 +430,8 @@ def match_temporarily():
     user_in_match_process = user_document.get('in_match_process')
     user_temporarily_matched = user_document.get('is_temporarily_matched')
     matchedList = user_document.get('mached_with')
+    if matchedList is None:
+        matchedList = []
     if user_in_match_process is True:
         return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
 
