@@ -82,11 +82,15 @@ def user_to_map(user):
             "age": user.get('age'),
             "ethnicity": ethnicity,
             "inMatchProcess": user.get('in_match_process'),
+            "matchedWith": user.get('matched_with'),
             "isTemporarilyMatched": user.get('is_temporarily_matched'),
             "isPermanentlyMatched": user.get('is_permanently_matched'),
             "imageUrl": user.get('image_url'),
             "hobbies": user.get('hobbies')
         }
+
+def user_document_by_id(user_id):
+    return mongo.db.users.find_one({'_id': ObjectId(user_id)})
 
 def user_response_by_id(user_id):
     user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
@@ -210,31 +214,6 @@ def not_already_permanently_matched(user, pal):
 
     return True
 
-
-def create_temporary_match(user_id_1, user_id_2):
-    # Create the conversation data
-    conversation_data_id = mongo.db.conversation_data.insert({"isPermanent": False, "lastMessageSent": None})
-
-    print "printing ids..."
-    print type(user_id_1)
-    print type(user_id_2)
-
-    isodate = datetime.utcnow()
-    mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
-    mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
-
-    # Set the above users matched to true
-    update_user_field(user_id_1, "is_temporarily_matched", True)
-    update_user_field(user_id_1, "in_match_process", False)
-    update_user_field(user_id_2, "is_temporarily_matched", True)
-    update_user_field(user_id_2, "in_match_process", False)
-
-    print "Emitting temporary match"
-    emit_to_clients(str(user_id_1), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
-    emit_to_clients(str(user_id_2), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
-
-    return
-
 # Functions for dealing with token generation and authorization
 def create_token(user_id):
     payload = {
@@ -315,6 +294,7 @@ def register():
                             "in_match_process": False, 
                             "is_temporarily_matched": False,
                             "is_permanently_matched": False,
+                            "matched_with": [],
                             "image_url": "http://res.cloudinary.com/palr/image/upload/v1479864897/default-profile-pic_gmwop0.jpg"
                         })
 
@@ -377,6 +357,44 @@ def match_permanently():
 
     return dumps({"message": "Waiting for other user to request to make the conversation permanent."}), 200, {'Content-Type':'application/json'}
 
+def create_temporary_match(user_id_1, user_id_2):
+    # Create the conversation data
+    conversation_data_id = mongo.db.conversation_data.insert({"isPermanent": False, "lastMessageSent": None})
+
+    print "printing ids..."
+    print type(user_id_1)
+    print type(user_id_2)
+
+    isodate = datetime.utcnow()
+    mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
+    mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
+
+    matchList1 = user_response_by_id(user_id_1).get("matchedWith")
+    matchList2 = user_response_by_id(user_id_2).get("matchedWith")
+
+    if matchList1 is None:
+        matchList1 = []
+
+    if matchList2 is None:
+        matchList2 = []
+
+    matchList1.append(user_id_2)
+    matchList2.append(user_id_1)
+
+    # Set the above users matched to true
+    update_user_field(user_id_1, "is_temporarily_matched", True)
+    update_user_field(user_id_1, "in_match_process", False)
+    update_user_field(user_id_1, "matched_with", matchList1)
+    update_user_field(user_id_2, "is_temporarily_matched", True)
+    update_user_field(user_id_2, "in_match_process", False)
+    update_user_field(user_id_2, "matched_with", matchList2)
+
+    print "Emitting temporary match"
+    emit_to_clients(str(user_id_1), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+    emit_to_clients(str(user_id_2), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+
+    return
+
 @app.route("/match", methods=['POST'])
 def match_temporarily():
     payload = parse_token(request)
@@ -411,6 +429,7 @@ def match_temporarily():
 
     user_in_match_process = user_document.get('in_match_process')
     user_temporarily_matched = user_document.get('is_temporarily_matched')
+    matchedList = user_document.get('mached_with')
     if user_in_match_process is True:
         return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
 
@@ -419,13 +438,14 @@ def match_temporarily():
     cursor = mongo.db.users.find({'in_match_process' : True})
     for record in cursor:
         if not_already_permanently_matched (user_id, str(record.get('_id'))):
-            # Add to the match vector based on match type
-            if match_type == "talk":
-                match_vector[str(record.get('_id'))] = get_match_value_for_talk(user_id, record.get('_id'))
-            elif match_type == "listen":
-                match_vector[str(record.get('_id'))] = get_match_value_for_listen(user_id, record.get('_id'))
-            else:  # learn
-                match_vector[str(record.get('_id'))] = get_match_value_for_learn(user_id, record.get('_id'))
+            if not str(record.get('_id')) in matchedList:
+                # Add to the match vector based on match type
+                if match_type == "talk":
+                    match_vector[str(record.get('_id'))] = get_match_value_for_talk(user_id, record.get('_id'))
+                elif match_type == "listen":
+                    match_vector[str(record.get('_id'))] = get_match_value_for_listen(user_id, record.get('_id'))
+                else:  # learn
+                    match_vector[str(record.get('_id'))] = get_match_value_for_learn(user_id, record.get('_id'))
         
 
     match_vector_keys = match_vector.keys()
@@ -493,7 +513,6 @@ def register_user_details(request):
     # Validate data
     if name is not None:
         if type(name) == unicode:
-            name = name.title()
             if len(name) == 0:
                 name = None
         else:
