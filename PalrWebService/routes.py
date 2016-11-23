@@ -12,6 +12,7 @@ from bson import ObjectId
 import atexit
 import jwt
 import pymongo
+import re
 import validators
 import global_constants
 from pymongo import MongoClient
@@ -47,9 +48,13 @@ def purge_old_conversations():
     conversations = mongo.db.conversations.find({'isPermanent': False})
     for conversation in conversations:
         created_at = conversation.get('created_at')
+        user = conversation.get('user')
+        pal = conversation.get('pal')
         diff = current_time - created_at
         if diff.days > 3:
             mongo.db.conversations.remove({'_id': ObjectId(conversation.get('_id'))})
+            update_user_field(user, "is_temporarily_matched", False)
+            update_user_field(pal, "is_temporarily_matched", False)
 
 
 scheduler = BackgroundScheduler()
@@ -87,6 +92,9 @@ def user_to_map(user):
             "imageUrl": user.get('image_url'),
             "hobbies": user.get('hobbies')
         }
+
+def user_document_by_id(user_id):
+    return mongo.db.users.find_one({'_id': ObjectId(user_id)})
 
 def user_response_by_id(user_id):
     user_document = mongo.db.users.find_one({'_id': ObjectId(user_id)})
@@ -209,7 +217,6 @@ def not_already_permanently_matched(user, pal):
             return False
 
     return True
-
 
 def create_temporary_match(user_id_1, user_id_2):
     # Create the conversation data
@@ -342,6 +349,11 @@ def register():
         abort(400, {'message': 'Missing required parameters' \
                 ' name, password, email, and country are ALL required.'})
 
+    if type(email) == unicode:
+        if not re.match(regex, email):
+            error_message = "Provided email was invalid."
+            abort(400, {'message': error_message})
+            
         # Should do error checking to see if user exists already
     if mongo.db.users.find({"email": email}).count() > 0:
         # Email already exists
@@ -357,7 +369,8 @@ def register():
                             "in_match_process": False, 
                             "is_temporarily_matched": False,
                             "is_permanently_matched": False,
-                            "image_url": "http://res.cloudinary.com/palr/image/upload/v1479435139/default-profile-pic_ujznfp.gif"
+                            "matched_with": [],
+                            "image_url": "http://res.cloudinary.com/palr/image/upload/v1479864897/default-profile-pic_gmwop0.jpg"
                         })
 
     user = User(str(_id), name, password, email, country)
@@ -419,6 +432,44 @@ def match_permanently():
 
     return dumps({"message": "Waiting for other user to request to make the conversation permanent."}), 200, {'Content-Type':'application/json'}
 
+def create_temporary_match(user_id_1, user_id_2):
+    # Create the conversation data
+    conversation_data_id = mongo.db.conversation_data.insert({"isPermanent": False, "lastMessageSent": None})
+
+    print "printing ids..."
+    print type(user_id_1)
+    print type(user_id_2)
+
+    isodate = datetime.utcnow()
+    mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
+    mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
+
+    matchList1 = user_document_by_id(user_id_1).get("matched_with")
+    matchList2 = user_document_by_id(user_id_2).get("matched_with")
+
+    if matchList1 is None:
+        matchList1 = []
+
+    if matchList2 is None:
+        matchList2 = []
+
+    matchList1.append(user_id_2)
+    matchList2.append(user_id_1)
+
+    # Set the above users matched to true
+    update_user_field(user_id_1, "is_temporarily_matched", True)
+    update_user_field(user_id_1, "in_match_process", False)
+    update_user_field(user_id_1, "matched_with", matchList1)
+    update_user_field(user_id_2, "is_temporarily_matched", True)
+    update_user_field(user_id_2, "in_match_process", False)
+    update_user_field(user_id_2, "matched_with", matchList2)
+
+    print "Emitting temporary match"
+    emit_to_clients(str(user_id_1), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+    emit_to_clients(str(user_id_2), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
+
+    return
+
 @app.route("/match", methods=['POST'])
 def match_temporarily():
     payload = parse_token(request)
@@ -453,6 +504,9 @@ def match_temporarily():
 
     user_in_match_process = user_document.get('in_match_process')
     user_temporarily_matched = user_document.get('is_temporarily_matched')
+    matchedList = user_document.get('mached_with')
+    if matchedList is None:
+        matchedList = []
     if user_in_match_process is True:
         return dumps({"inMatchProcess": user_in_match_process, "isTemporarilyMatched": user_temporarily_matched}), 200, {'ContentType':'application/json'}
 
@@ -461,13 +515,14 @@ def match_temporarily():
     cursor = mongo.db.users.find({'in_match_process' : True})
     for record in cursor:
         if not_already_permanently_matched (user_id, str(record.get('_id'))):
-            # Add to the match vector based on match type
-            if match_type == "talk":
-                match_vector[str(record.get('_id'))] = get_match_value_for_talk(user_id, record.get('_id'))
-            elif match_type == "listen":
-                match_vector[str(record.get('_id'))] = get_match_value_for_listen(user_id, record.get('_id'))
-            else:  # learn
-                match_vector[str(record.get('_id'))] = get_match_value_for_learn(user_id, record.get('_id'))
+            if not str(record.get('_id')) in matchedList:
+                # Add to the match vector based on match type
+                if match_type == "talk":
+                    match_vector[str(record.get('_id'))] = get_match_value_for_talk(user_id, record.get('_id'))
+                elif match_type == "listen":
+                    match_vector[str(record.get('_id'))] = get_match_value_for_listen(user_id, record.get('_id'))
+                else:  # learn
+                    match_vector[str(record.get('_id'))] = get_match_value_for_learn(user_id, record.get('_id'))
         
 
     match_vector_keys = match_vector.keys()
@@ -517,10 +572,14 @@ def register_user_details(request):
     payload = parse_token(request)
     user_id = payload['sub']
 
+    regex = "^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$"
+
     # Get the request body
     req_body = request.get_json()
 
     # Get the data from the request
+    name = req_body.get('name')
+    email = req_body.get('email')
     gender = req_body.get('gender')
     country = req_body.get('country')
     age = req_body.get('age')
@@ -529,6 +588,23 @@ def register_user_details(request):
     hobbies = req_body.get('hobbies')
 
     # Validate data
+    if name is not None:
+        if type(name) == unicode:
+            if len(name) == 0:
+                name = None
+        else:
+            error_message = "Name should be a string."
+            abort(400, {'message': error_message})
+
+    if email is not None:
+        if type(email) == unicode:
+            if not re.match(regex, email):
+                error_message = "Provided email was invalid."
+                abort(400, {'message': error_message})
+        else:
+            error_message = "Email should be a string."
+            abort(400, {'message': error_message})
+
     if gender is not None:
         if type(gender) == unicode:
             gender = gender.lower()
@@ -576,9 +652,15 @@ def register_user_details(request):
     if hobbies is not None:
         if type (hobbies) != list:
             error_message = "Hobbies must be an array/list of strings."
-            abort(400, {'message': error_message})            
+            abort(400, {'message': error_message})        
 
     # Update non null fields
+    if name is not None:
+        update_user_field(user_id, "name", name)
+
+    if email is not None:
+        update_user_field(user_id, "email", email)
+
     if gender is not None:
         update_user_field(user_id, "gender", gender)
 
