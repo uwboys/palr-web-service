@@ -66,7 +66,7 @@ def purge_old_conversations():
                 mongo.db.conversations.remove({'_id': ObjectId(conversation.get('_id'))})
                 update_user_field(user, "is_temporarily_matched", False)
                 update_user_field(pal, "is_temporarily_matched", False)
-                emit_to_clients(str(user), 'delete_conversation', None)
+                emit_to_clients(str(user), 'delete_conversation', dumps({"conversation_id": str(coversation.get('_id'))}))
 
 
 scheduler = BackgroundScheduler()
@@ -872,17 +872,19 @@ def add_client(access_token):
         clients[user_id] = request_sid_array
     '''
 
-@socketio.on('connected', namespace='/ws')
+@socketio.on('connect', namespace='/ws')
 def connected():
     print 'Establishing session connection'
+    print request.sid
 
-@socketio.on('disconnected', namespace='/ws')
+@socketio.on('disconnect', namespace='/ws')
 def disconnected():
-    print 'disconnecting...'
+    print 'Disconnecting'
+    print request
     # Remove this from clients
     leave_room(request.sid)
     for k, v in clients.items():
-        if v[-1].request.sid == request.sid:
+        if v[-1].sid == request.sid:
             print 'Deleting client with id ' + k
             v.pop()
             if len(v) == 0:
