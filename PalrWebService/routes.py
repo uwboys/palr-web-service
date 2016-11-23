@@ -282,6 +282,8 @@ def register():
     # Get the request body
     req_body = request.get_json()
 
+    regex = "^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$"
+
     name = req_body.get('name')
     password = req_body.get('password')
     email = req_body.get('email')
