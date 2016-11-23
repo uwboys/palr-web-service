@@ -66,6 +66,7 @@ def purge_old_conversations():
                 mongo.db.conversations.remove({'_id': ObjectId(conversation.get('_id'))})
                 update_user_field(user, "is_temporarily_matched", False)
                 update_user_field(pal, "is_temporarily_matched", False)
+                emit_to_clients(str(user), 'delete_conversation', None)
 
 
 scheduler = BackgroundScheduler()
