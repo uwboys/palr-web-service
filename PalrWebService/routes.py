@@ -82,7 +82,6 @@ def user_to_map(user):
             "age": user.get('age'),
             "ethnicity": ethnicity,
             "inMatchProcess": user.get('in_match_process'),
-            "matchedWith": user.get('matched_with'),
             "isTemporarilyMatched": user.get('is_temporarily_matched'),
             "isPermanentlyMatched": user.get('is_permanently_matched'),
             "imageUrl": user.get('image_url'),
@@ -369,8 +368,8 @@ def create_temporary_match(user_id_1, user_id_2):
     mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
     mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
 
-    matchList1 = user_response_by_id(user_id_1).get("matchedWith")
-    matchList2 = user_response_by_id(user_id_2).get("matchedWith")
+    matchList1 = user_document_by_id(user_id_1).get("matched_with")
+    matchList2 = user_document_by_id(user_id_2).get("matched_with")
 
     if matchList1 is None:
         matchList1 = []
