@@ -24,8 +24,8 @@ from flask_socketio import emit, join_room, leave_room
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from random import randint
-from PalrWebService import app
 
+app = Flask(__name__)
 
 app.config['MONGO_HOST'] = 'ds044989.mlab.com'
 app.config['MONGO_PORT'] = 44989
@@ -229,72 +229,6 @@ def not_already_permanently_matched(user, pal):
 
     return True
 
-def create_temporary_match(user_id_1, user_id_2):
-    # Create the conversation data
-    conversation_data_id = mongo.db.conversation_data.insert({"isPermanent": False, "lastMessageSent": None})
-
-    print "printing ids..."
-    print type(user_id_1)
-    print type(user_id_2)
-
-    isodate = datetime.utcnow()
-    _id_user_1 = mongo.db.conversations.insert({"user": user_id_1, "pal": user_id_2, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
-    _id_user_2 = mongo.db.conversations.insert({"user": user_id_2, "pal": user_id_1, "conversation_data_id": conversation_data_id, "created_at": isodate, "last_message_date": isodate, "is_permanent": False, "request_permanent": False})
-
-    # Set the above users matched to true
-    update_user_field(user_id_1, "is_temporarily_matched", True)
-    update_user_field(user_id_1, "in_match_process", False)
-    update_user_field(user_id_2, "is_temporarily_matched", True)
-    update_user_field(user_id_2, "in_match_process", False)
-
-    # Find common hobbies, insert message into messages for both user
-    user_1_hobbies = mongo.db.users.find_one({'_id': user_id_1}).get('hobbies')
-    user_2_hobbies = mongo.db.users.find_one({'_id': user_id_2}).get('hobbies')
-
-    if (user_1_hobbies is not None and user_2_hobbies is not None and len(user_1_hobbies) > 0 and len(user_2_hobbies) > 0):
-        # We actually find the common hobbies, 
-        common_hobbies = set(user_1_hobbies).intersection(user_2_hobbies)
-        print "common hobbies"
-        print common_hobbies
-
-        random = randint(0,1)
-
-        final_conversation = None
-
-        print "Random is equal to " + random
-
-        if random == 0:
-            conversations = mongo.db.conversations.find({'user': user_id_2})
-
-            for possible_other_conversation in conversations:
-                if possible_other_conversation.get('pal') == user_id_1:
-                    final_conversation = possible_other_conversation
-                    break
-        elif random == 1:
-            conversations = mongo.db.conversations.find({'user': user_id_1})
-
-            for possible_other_conversation in conversations:
-                if possible_other_conversation.get('pal') == user_id_2:
-                    final_conversation = possible_other_conversation
-                    break
-
-        # update conversations last update data
-        print "Entering message into db"
-        conversation_cursor = mongo.db.conversations.find({"conversation_data_id": final_conversation.get('conversation_data_id')})
-        for record in conversation_cursor:
-            mongo.db.conversations.update({"_id": record.get('_id')}, {"$set": {"last_message_date": isodate}})
-
-        # create the message
-        message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.utcnow(), "created_by": ObjectId(created_by), 
-                                               "content": "You have common hobbies of " + hobbies})
-
-
-    print "Emitting temporary match"
-    emit_to_clients(str(user_id_1), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
-    emit_to_clients(str(user_id_2), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
-
-    return
-
 # Functions for dealing with token generation and authorization
 def create_token(user_id):
     payload = {
@@ -476,6 +410,59 @@ def create_temporary_match(user_id_1, user_id_2):
     update_user_field(user_id_2, "is_temporarily_matched", True)
     update_user_field(user_id_2, "in_match_process", False)
     update_user_field(user_id_2, "matched_with", matchList2)
+
+    # Find common hobbies, insert message into messages for both user
+    user_1_hobbies = mongo.db.users.find_one({'_id': ObjectId(user_id_1)}).get('hobbies')
+    user_2_hobbies = mongo.db.users.find_one({'_id': ObjectId(user_id_2)}).get('hobbies')
+
+    print "Hobbies..."
+    print user_1_hobbies
+    print user_2_hobbies
+    if (user_1_hobbies is not None and user_2_hobbies is not None and len(user_1_hobbies) > 0 and len(user_2_hobbies) > 0):
+        # We actually find the common hobbies, 
+        common_hobbies = set(user_1_hobbies).intersection(user_2_hobbies)
+        print "common hobbies"
+        print common_hobbies
+
+        random = randint(0,1)
+
+        final_conversation = None
+
+        created_by = None
+
+        if common_hobbies is not None and len(common_hobbies) > 0:
+            if random == 0:
+                conversations = mongo.db.conversations.find({'user': user_id_2})
+
+                for possible_other_conversation in conversations:
+                    if possible_other_conversation.get('pal') == user_id_1:
+                        final_conversation = possible_other_conversation
+                        created_by = user_id_2
+                        break
+            elif random == 1:
+                conversations = mongo.db.conversations.find({'user': user_id_1})
+
+                for possible_other_conversation in conversations:
+                    if possible_other_conversation.get('pal') == user_id_2:
+                        final_conversation = possible_other_conversation
+                        created_by = user_id_1
+                        break
+
+            # update conversations last update data
+            print "Entering message into db"
+            conversation_cursor = mongo.db.conversations.find({"conversation_data_id": final_conversation.get('conversation_data_id')})
+            for record in conversation_cursor:
+                mongo.db.conversations.update({"_id": record.get('_id')}, {"$set": {"last_message_date": isodate}})
+
+            # create the message
+            message = ""
+            for common in common_hobbies:
+                message += common + ", "
+
+            message = message[:-2]
+
+            message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.utcnow(), "created_by": ObjectId(created_by), 
+                                                    "content": "Hi there! Let's talk about " + str(message) + "!"})
 
     print "Emitting temporary match"
     emit_to_clients(str(user_id_1), 'temporary_match', dumps({"inMatchProcess": False, "isTemporarilyMatched": True}))
