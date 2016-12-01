@@ -1,4 +1,4 @@
-import setup
+import application
 
 if __name__ == "__main__":
-    setup.app.run()
+    application.app.run(debug = True)

@@ -25,19 +25,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from random import randint
 
-app = Flask(__name__)
 
-app.config['MONGO_HOST'] = 'ds044989.mlab.com'
-app.config['MONGO_PORT'] = 44989
-app.config['MONGO_DBNAME'] = 'palrdb'
-app.config['MONGO_USERNAME'] = 'admin'
-app.config['MONGO_PASSWORD'] = 'admin'
 
-MONGODB_URI = 'mongodb://admin:admin@ds044989.mlab.com:44989/palrdb'
-
-CORS(app)
-
-app.config['SECRET_KEY'] = 'super-secret-key'
 
 socketio = SocketIO(app)
 
@@ -228,107 +217,6 @@ def not_already_permanently_matched(user, pal):
             return False
 
     return True
-
-# Functions for dealing with token generation and authorization
-def create_token(user_id):
-    payload = {
-            # subject
-            'sub': user_id,
-            #issued at
-            'iat': datetime.utcnow(),
-            #expiry
-            'exp': datetime.utcnow() + timedelta(days=5)
-            }
-
-    token = jwt.encode(payload, app.secret_key, algorithm='HS256')
-    return token.decode('unicode_escape')
-
-def parse_token(req):
-    token = req.headers.get('Authorization')
-    return jwt.decode(token, app.secret_key, algorithms='HS256')
-
-# Error Handling
-@app.errorhandler(400)
-def respond400(error):
-    response = jsonify({'message': error.description['message']})
-    response.status_code = 400
-    return response
-
-@app.route('/login', methods=['POST'])
-def login():
-    email = request.get_json().get('email')
-    password = request.get_json().get('password')
-
-    cursor = mongo.db.users.find({"email": email})
-
-    if cursor.count() == 0:
-        error_message = "A user with the email " + email + " does not exist."
-        abort(400, {'message': error_message})
-
-
-    user_document = cursor.next()
-
-    if not check_password_hash(user_document['password'], password):
-        error_message = "Invalid password for " + email + "."
-        abort(400, {'message': error_message})
-
-    user_id = str(user_document['_id'])
-    token = create_token(user_id)
-    resp = jsonify({"accessToken": token,
-        "userId": user_id})
-
-    return resp
-
-@app.route('/register', methods = ['POST'])
-def register():
-    # Get the request body
-    req_body = request.get_json()
-
-    regex = "^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$"
-
-    name = req_body.get('name')
-    password = req_body.get('password')
-    email = req_body.get('email')
-    country = req_body.get('country')
-
-    if name is None or password is None or email is None:
-        # missing arguments
-        abort(400, {'message': 'Missing required parameters' \
-                ' name, password, email, and country are ALL required.'})
-
-    if type(email) == unicode:
-        if not re.match(regex, email):
-            error_message = "Provided email was invalid."
-            abort(400, {'message': error_message})
-
-        # Should do error checking to see if user exists already
-    if mongo.db.users.find({"email": email}).count() > 0:
-        # Email already exists
-        error_message = "A user with the email " + email + " already exists."
-        abort(400, {'message': error_message})
-
-
-    _id = mongo.db.users.insert({   
-                            "name": name, 
-                            "password": generate_password_hash(password), 
-                            "email" : email, 
-                            "country": country, 
-                            "in_match_process": False, 
-                            "is_temporarily_matched": False,
-                            "is_permanently_matched": False,
-                            "matched_with": [],
-                            "image_url": "http://res.cloudinary.com/palr/image/upload/v1479864897/default-profile-pic_gmwop0.jpg"
-                        })
-
-    user = User(str(_id), name, password, email, country)
-
-    # Now we have the Id, we need to create a jwt access token
-    # and send the corresponding response back
-    token = create_token(user.id)
-    resp = jsonify({"accessToken": token,
-        "userId": str(_id)})
-
-    return resp
 
 @app.route("/match/permanent", methods=['POST'])
 def match_permanently():
@@ -555,7 +443,6 @@ def user(user_id):
     return jsonify(user_response_by_id(user_id))
 
 @app.route("/users/me", methods=['GET', 'PUT'])
-@cross_origin()
 def user_details():
     if request.method == 'GET':
         return get_user_details(request)
@@ -716,101 +603,8 @@ def conversations():
 
     return make_response(dumps(conversations_list))
 
-def get_messages(request):
-    payload = parse_token(request)
-    conversation_data_id = request.args.get('conversationDataId')
-    limit = request.args.get('limit')
-    offset = request.args.get('offset')
-    if conversation_data_id is None:
-        # invalid query parameters
-        error_message = "The parameter conversationDataId was missing."
-        abort(400, {'message': error_message})
-
-    # default limit is 20
-    if limit is None:
-        limit = 20
-
-    #default offset is 0
-    if offset is None:
-        offset = 0
-    messages = []
-    #get messages associated with the conversationDataId
-    cursor = mongo.db.messages.find({"conversation_data_id": ObjectId(conversation_data_id)}).sort('created_at', pymongo.DESCENDING)
-
-    if cursor.count() > offset or limit != 0:
-        i = 0
-        j = 0
-        for record in cursor:
-            if i < offset:
-                i+=1
-                continue
-            if j < limit:
-                j+=1
-                # Get relevant information for encoding
-                user_document = user_to_map(mongo.db.users.find_one({'_id': record.get('created_by')}))
-
-                data = {
-                        'id': str(record.get('_id')),
-                        'conversationDataId': conversation_data_id,
-                        'createdBy': user_document,
-                        'createdAt': str(record.get('created_at')),
-                        'content': record.get('content')
-                        }
-                messages.append(data)
-            else:
-                break
-        return make_response(dumps(messages))
 
 clients = {}
-
-def send_message(request):
-    payload = parse_token(request)
-
-    # Get the request body
-    req_body = request.get_json()
-
-    content = req_body.get('content')
-    conversation_data_id = req_body.get('conversationDataId')
-    created_by = payload['sub']
-
-    # validate
-    if content is None or conversation_data_id is None:
-        # invalid query parameters
-        error_message = "Error in the request body. Content and conversationDataId are needed."
-        abort(400, {'message': error_message})
-
-    # get the current time
-    isodate = datetime.utcnow()
-
-
-    # update conversations last update data
-    conversation_cursor = mongo.db.conversations.find({"conversation_data_id": conversation_data_id})
-    for record in conversation_cursor:
-        mongo.db.conversations.update({"_id": record.get('_id')}, {"$set": {"last_message_date": isodate}})
-
-    # create the message
-    message_id = mongo.db.messages.insert({"conversation_data_id": ObjectId(conversation_data_id), "created_at": datetime.utcnow(), "created_by": ObjectId(created_by), "content": content})
-    user_document = user_to_map(mongo.db.users.find_one({'_id': ObjectId(created_by)}))
-
-    # get the created message
-    record = mongo.db.messages.find_one({"_id": message_id})
-    message = {
-        'id': str(record.get('_id')),
-        'conversationDataId': str(conversation_data_id),
-        'createdBy': user_document,
-        'createdAt': str(record.get('created_at')),
-        'content': record.get('content')
-    }
-
-    conversation = mongo.db.conversations.find_one({"conversation_data_id": ObjectId(conversation_data_id),
-                                                    "user": ObjectId(created_by)})
-
-    pal_record_id = str(conversation.get('pal'))
-
-    # Emit to that 
-    emit_to_clients(pal_record_id, 'message', message)
-
-    return make_response(dumps(message))
 
 def emit_to_clients(user_id, event, data):
     # Emit to that 
@@ -818,24 +612,6 @@ def emit_to_clients(user_id, event, data):
         for socket in clients[user_id]:
             socket.emit(event, data)
 
-
-# Object that represents a socket connection
-class Socket:
-    def __init__(self, sid):
-        self.sid = sid
-        self.connected = True
-
-# Emits data to a socket's unique room
-    def emit(self, event, data):
-        emit(event, data, room=self.sid, namespace='/ws', incdude_self=False)
-
-
-@app.route("/messages", methods=['GET', 'POST'])
-def messages():
-    if request.method =='POST':
-        return send_message(request)
-    else:
-        return get_messages(request)
 
 @socketio.on('add_client', namespace='/ws')
 def add_client(access_token):
@@ -851,13 +627,6 @@ def add_client(access_token):
         clients[user_id] = sockets
 
     join_room(request.sid)
-    ''' 
-    if user_id in clients:
-        clients[user_id].append(request.sid)
-    else:
-        request_sid_array = [request.sid]
-        clients[user_id] = request_sid_array
-    '''
 
 @socketio.on('connect', namespace='/ws')
 def connected():
@@ -886,7 +655,3 @@ def disconnected():
                 del clients[k]
                 return
     '''
-
-
-if __name__ == "__main__":
-    socketio.run(app)

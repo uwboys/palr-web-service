@@ -17,7 +17,7 @@ MarkupSafe==0.23
 pipreqs==0.4.4
 psutil==5.0.0
 PyJWT==1.4.2
-pymongo==3.3.0
+pymongo==2.9
 python-engineio==1.0.3
 python-socketio==1.6.0
 pytz==2013.7

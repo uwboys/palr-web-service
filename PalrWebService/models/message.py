@@ -1,11 +1,11 @@
 from datetime import datetime
 from mongokit import Document, Connection
-from config import DatabaseConfig
-from setup import mongoConnection
+from config import Config
+from extensions import db
 
-@mongoConnection.register
+@db.register
 class Message(Document): 
-    __database__ = DatabaseConfig.MONGO_DBNAME
+    __database__ = Config.DatabaseConfig.MONGO_DBNAME
     __collection__ = 'messages'
 
     structure = {
@@ -15,3 +15,5 @@ class Message(Document):
         'conversation_data_id': basestring,
         'created_by': basestring
     }
+
+    use_dot_notation = True

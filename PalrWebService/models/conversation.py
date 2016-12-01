@@ -1,12 +1,12 @@
 from datetime import datetime
 from mongokit import Document, Connection
-from config import DatabaseConfig
-from setup import mongoConnection
+from config import Config 
+from extensions import db
 
-@mongoConnection.register
-class Conversation(db.Document): 
-    __collection__ = 'messages'
-    __database__ = DatabaseConfig.MONGO_DBNAME
+@db.register
+class Conversation(Document): 
+    __database__ = Config.DatabaseConfig.MONGO_DBNAME
+    __collection__ = 'conversations'
 
     structure = {
         '_id': basestring,
@@ -14,5 +14,7 @@ class Conversation(db.Document):
         'conversation_data_id': basestring,
         'user': basestring,
         'pal': basestring,
-        'last_message_date': datetime
+        'last_message_date': datetime,
+        'request_permanent': bool,
+        'is_permanent': bool 
     }
