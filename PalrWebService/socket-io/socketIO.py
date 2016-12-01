@@ -1,4 +1,5 @@
 from config import Config
+from flask import Blueprint
 
 socket_blueprint = Blueprint('socket', __name__)
 
