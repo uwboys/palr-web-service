@@ -13,7 +13,7 @@ message_api = Blueprint('message', __name__)
 The following contains our endpoint defintions
 '''
 
-@app.route('/messages', methods=['GET', 'POST'])
+@message_api.route('/messages', methods=['GET', 'POST'])
 def messages():
     if request.method == 'POST':
         return send_message(request)
